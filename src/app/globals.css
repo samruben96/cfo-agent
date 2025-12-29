@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* BFI CFO Bot - UX Theme Colors */
+
+    /* Primary - Deep Navy */
+    --primary: 211 52% 25%;
+    --primary-light: 213 36% 37%;
+    --primary-foreground: 0 0% 98%;
+
+    /* Accent - Warm Gold & Coral */
+    --accent: 30 52% 64%;
+    --accent-foreground: 215 25% 23%;
+    --accent-alt: 14 67% 63%;
+
+    /* Backgrounds & Surfaces */
+    --background: 60 9% 97%;
+    --foreground: 215 25% 23%;
+    --surface: 0 0% 100%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 23%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 23%;
+
+    /* Text */
+    --text-primary: 215 25% 23%;
+    --text-secondary: 214 14% 52%;
+
+    /* Secondary & Muted */
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 215 25% 23%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 214 14% 52%;
+
+    /* Semantic Colors */
+    --success: 145 50% 51%;
+    --success-foreground: 0 0% 100%;
+    --warning: 25 84% 57%;
+    --warning-foreground: 215 25% 23%;
+    --destructive: 0 76% 57%;
+    --destructive-foreground: 0 0% 98%;
+    --info: 206 72% 57%;
+    --info-foreground: 0 0% 100%;
+
+    /* Borders & Inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 211 52% 25%;
+
+    /* Charts */
+    --chart-1: 211 52% 25%;
+    --chart-2: 30 52% 64%;
+    --chart-3: 145 50% 51%;
+    --chart-4: 14 67% 63%;
+    --chart-5: 206 72% 57%;
+
+    /* Radius */
+    --radius: 0.5rem;
+  }
+
+  /* Dark mode - kept minimal, can expand later */
+  .dark {
+    --primary: 213 36% 60%;
+    --primary-foreground: 215 25% 10%;
+    --background: 215 25% 10%;
+    --foreground: 60 9% 97%;
+    --card: 215 25% 15%;
+    --card-foreground: 60 9% 97%;
+    --popover: 215 25% 15%;
+    --popover-foreground: 60 9% 97%;
+    --secondary: 215 25% 20%;
+    --secondary-foreground: 60 9% 97%;
+    --muted: 215 25% 20%;
+    --muted-foreground: 214 14% 70%;
+    --accent: 30 52% 50%;
+    --accent-foreground: 60 9% 97%;
+    --destructive: 0 76% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 215 25% 20%;
+    --input: 215 25% 20%;
+    --ring: 30 52% 64%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
