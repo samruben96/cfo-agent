@@ -141,4 +141,41 @@ describe('createCFOSystemPrompt', () => {
       expect(prompt).toMatch(/proactive.*missing data|ask.*missing/i)
     })
   })
+
+  describe('follow-up question suggestions', () => {
+    it('includes follow-up question guidelines section', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toContain('Follow-up Question Guidelines')
+    })
+
+    it('instructs AI to include 2-3 suggestions at end of responses', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toMatch(/2-3.*suggested.*follow-up|suggested.*2-3/i)
+    })
+
+    it('specifies the SUGGESTIONS delimiter format', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toContain('---SUGGESTIONS---')
+    })
+
+    it('instructs suggestions to be contextually relevant', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toMatch(/relevant.*discussed|discussed.*relevant/i)
+    })
+
+    it('includes example suggestions for employee costs context', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toContain('profitability by role')
+    })
+
+    it('includes example suggestions for overhead context', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toContain('break down')
+    })
+
+    it('provides bullet format example for suggestions', () => {
+      const prompt = createCFOSystemPrompt(mockContext)
+      expect(prompt).toContain('- [First follow-up question]')
+    })
+  })
 })

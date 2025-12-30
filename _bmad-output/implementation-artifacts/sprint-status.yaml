@@ -55,10 +55,10 @@ development_status:
   2-4-send-message-get-ai-response: done
   2-5-conversation-context-follow-ups: done
   2-6-conversational-data-input: done
-  2-7-suggested-follow-up-questions: backlog
-  2-8-conversation-history-persistence: backlog
+  2-7-suggested-follow-up-questions: done
+  2-8-conversation-history-persistence: done
   2-9-view-continue-past-conversations: backlog
-  epic-2-retrospective: optional
+  epic-2-retrospective: optional 
 
   # Epic 3: Document & Form Data Input
   epic-3: backlog

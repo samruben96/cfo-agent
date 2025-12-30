@@ -10,15 +10,28 @@ Element.prototype.scrollIntoView = vi.fn()
 // Define mock functions at module level for hoisting
 const mockToastError = vi.fn()
 const mockSendMessage = vi.fn()
+const mockSetMessages = vi.fn()
 let mockOnError: ((error: Error) => void) | undefined
 let mockMessages: Array<{ id: string; role: string; parts: Array<{ type: string; text: string }> }> = []
 let mockStatus: 'ready' | 'submitted' | 'streaming' = 'ready'
+let mockConversation: { messages: Array<{ id: string; conversation_id: string; role: string; content: string; created_at: string }> } | null = null
+let mockIsLoadingHistory = false
 
 // Mock sonner toast
 vi.mock('sonner', () => ({
   toast: {
     error: (msg: string) => mockToastError(msg)
   }
+}))
+
+// Mock useConversation hook
+vi.mock('@/hooks/use-conversation', () => ({
+  useConversation: () => ({
+    conversation: mockConversation,
+    isLoading: mockIsLoadingHistory,
+    error: null,
+    refetch: vi.fn(),
+  })
 }))
 
 // Mock useChat hook with mutable state
@@ -29,7 +42,8 @@ vi.mock('@ai-sdk/react', () => ({
       messages: mockMessages,
       status: mockStatus,
       error: null,
-      sendMessage: mockSendMessage
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
     }
   }
 }))
@@ -40,6 +54,8 @@ describe('ChatClient Integration', () => {
     mockOnError = undefined
     mockMessages = []
     mockStatus = 'ready'
+    mockConversation = null
+    mockIsLoadingHistory = false
   })
 
   describe('Empty State', () => {
@@ -78,7 +94,7 @@ describe('ChatClient Integration', () => {
       const { container } = render(<ChatClient />)
 
       expect(screen.getByText('Hello')).toBeInTheDocument()
-      const userMessage = container.querySelector('.justify-end')
+      const userMessage = container.querySelector('.items-end')
       expect(userMessage).toBeInTheDocument()
     })
 
@@ -90,7 +106,7 @@ describe('ChatClient Integration', () => {
       const { container } = render(<ChatClient />)
 
       expect(screen.getByText('How can I help?')).toBeInTheDocument()
-      const assistantMessage = container.querySelector('.justify-start')
+      const assistantMessage = container.querySelector('.items-start')
       expect(assistantMessage).toBeInTheDocument()
     })
 
@@ -210,6 +226,158 @@ describe('ChatClient Integration', () => {
     })
   })
 
+  describe('Suggested Questions', () => {
+    it('parses suggestions from last assistant message', () => {
+      mockMessages = [
+        { id: '1', role: 'user', parts: [{ type: 'text', text: 'What is my payroll?' }] },
+        {
+          id: '2',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `Your payroll is $50,000 per month.
+
+---SUGGESTIONS---
+- How does this compare to benchmarks?
+- Can I reduce payroll costs?`
+          }]
+        }
+      ]
+      mockStatus = 'ready'
+
+      render(<ChatClient />)
+
+      // Suggestions should be rendered for completed assistant messages
+      expect(screen.getByText('How does this compare to benchmarks?')).toBeInTheDocument()
+      expect(screen.getByText('Can I reduce payroll costs?')).toBeInTheDocument()
+    })
+
+    it('does not show suggestions while loading', () => {
+      mockMessages = [
+        { id: '1', role: 'user', parts: [{ type: 'text', text: 'What is my payroll?' }] },
+        {
+          id: '2',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `Your payroll is $50,000.
+
+---SUGGESTIONS---
+- How does this compare?`
+          }]
+        }
+      ]
+      mockStatus = 'streaming'
+
+      render(<ChatClient />)
+
+      // Suggestions should not appear during streaming
+      expect(screen.queryByText('How does this compare?')).not.toBeInTheDocument()
+    })
+
+    it('calls sendMessage when suggestion is clicked', async () => {
+      const user = userEvent.setup()
+      mockMessages = [
+        { id: '1', role: 'user', parts: [{ type: 'text', text: 'Hello' }] },
+        {
+          id: '2',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `Hi there!
+
+---SUGGESTIONS---
+- Tell me more`
+          }]
+        }
+      ]
+      mockStatus = 'ready'
+
+      render(<ChatClient />)
+
+      const suggestionButton = screen.getByText('Tell me more')
+      await user.click(suggestionButton)
+
+      expect(mockSendMessage).toHaveBeenCalledWith({ text: 'Tell me more' })
+    })
+
+    it('does not send suggestion when loading', async () => {
+      mockMessages = [
+        { id: '1', role: 'user', parts: [{ type: 'text', text: 'Hello' }] },
+        {
+          id: '2',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `Response
+
+---SUGGESTIONS---
+- Follow up`
+          }]
+        }
+      ]
+      // Start ready, then switch to streaming after render
+      mockStatus = 'ready'
+
+      const { rerender } = render(<ChatClient />)
+
+      // Switch to loading state
+      mockStatus = 'streaming'
+      rerender(<ChatClient />)
+
+      // Suggestion should not be visible during loading
+      expect(screen.queryByText('Follow up')).not.toBeInTheDocument()
+    })
+
+    it('does not show suggestions when last message is from user', () => {
+      mockMessages = [
+        {
+          id: '1',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `Hello!
+
+---SUGGESTIONS---
+- Old suggestion`
+          }]
+        },
+        { id: '2', role: 'user', parts: [{ type: 'text', text: 'New question' }] }
+      ]
+      mockStatus = 'ready'
+
+      render(<ChatClient />)
+
+      // Suggestions from previous assistant message should not be shown
+      expect(screen.queryByText('Old suggestion')).not.toBeInTheDocument()
+    })
+
+    it('strips suggestions section from displayed message content', () => {
+      mockMessages = [
+        { id: '1', role: 'user', parts: [{ type: 'text', text: 'Hello' }] },
+        {
+          id: '2',
+          role: 'assistant',
+          parts: [{
+            type: 'text',
+            text: `This is the main response.
+
+---SUGGESTIONS---
+- Follow up question`
+          }]
+        }
+      ]
+      mockStatus = 'ready'
+
+      render(<ChatClient />)
+
+      // Main content should be visible
+      expect(screen.getByText('This is the main response.')).toBeInTheDocument()
+      // Delimiter should not be visible in the message
+      expect(screen.queryByText('---SUGGESTIONS---')).not.toBeInTheDocument()
+    })
+  })
+
   describe('Error Handling', () => {
     it('shows generic toast on network error', () => {
       render(<ChatClient />)
@@ -272,6 +440,46 @@ describe('ChatClient Integration', () => {
 
       // The input should be restored from the ref
       expect(textarea).toHaveValue('My important question')
+    })
+  })
+
+  describe('Conversation Persistence', () => {
+    it('shows loading state while fetching conversation history', () => {
+      mockIsLoadingHistory = true
+
+      render(<ChatClient initialConversationId="conv-123" />)
+
+      expect(screen.getByText('Loading conversation...')).toBeInTheDocument()
+    })
+
+    it('does not show loading state without conversationId', () => {
+      mockIsLoadingHistory = true
+
+      render(<ChatClient />)
+
+      // Should show empty state instead of loading
+      expect(screen.queryByText('Loading conversation...')).not.toBeInTheDocument()
+      expect(screen.getByText('Welcome to your CFO Bot')).toBeInTheDocument()
+    })
+
+    it('disables input while loading history', () => {
+      mockIsLoadingHistory = true
+
+      render(<ChatClient initialConversationId="conv-123" />)
+
+      const textarea = screen.getByPlaceholderText('Ask your CFO anything...')
+      expect(textarea).toBeDisabled()
+    })
+
+    it('accepts onConversationChange callback prop', () => {
+      const onConversationChange = vi.fn()
+
+      // Simply verify the component renders with the callback prop
+      render(<ChatClient onConversationChange={onConversationChange} />)
+
+      // The callback will be called when the server returns a new conversation ID
+      // This is handled internally via the transport body pattern
+      expect(screen.getByText('Welcome to your CFO Bot')).toBeInTheDocument()
     })
   })
 })

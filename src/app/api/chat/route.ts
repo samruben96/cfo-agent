@@ -3,12 +3,18 @@ import { streamText, convertToModelMessages, stepCountIs } from 'ai'
 import { openai } from '@/lib/ai/openai'
 import { createCFOSystemPrompt } from '@/lib/ai/prompts'
 import { createProfileTools } from '@/lib/ai/tools'
+import {
+  createConversation,
+  saveMessage,
+  updateConversationTitle,
+} from '@/lib/conversations'
 import { createClient } from '@/lib/supabase/server'
 
 import type { UIMessage } from 'ai'
 
 interface ChatRequest {
   messages: UIMessage[]
+  conversationId?: string
 }
 
 export async function POST(req: Request) {
@@ -34,13 +40,57 @@ export async function POST(req: Request) {
 
     // Parse request body
     const body = await req.json() as ChatRequest
-    const { messages } = body
+    const { messages, conversationId: requestConversationId } = body
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: 'Invalid request: messages array required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
+    }
+
+    // Handle conversation persistence
+    let activeConversationId = requestConversationId
+
+    // Create conversation if not provided
+    if (!activeConversationId) {
+      const { data: newConv, error: convError } = await createConversation(user.id)
+      if (convError || !newConv) {
+        console.error('[ChatAPI]', { action: 'createConversation', error: convError })
+        return new Response(
+          JSON.stringify({ error: 'Failed to create conversation' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+      activeConversationId = newConv.id
+    }
+
+    // Get the latest user message and save it
+    const latestUserMessage = messages.filter(m => m.role === 'user').pop()
+    if (latestUserMessage) {
+      // Extract text content from message parts
+      const textContent = latestUserMessage.parts
+        ?.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join('') || ''
+
+      if (textContent) {
+        const { error: saveError } = await saveMessage(
+          activeConversationId,
+          'user',
+          textContent
+        )
+        if (saveError) {
+          console.error('[ChatAPI]', { action: 'saveUserMessage', error: saveError })
+          // Continue anyway - don't fail the request
+        }
+
+        // Auto-generate title from first message if conversation is new
+        if (!requestConversationId) {
+          const title = textContent.length > 50 ? textContent.substring(0, 47) + '...' : textContent
+          await updateConversationTitle(activeConversationId, title)
+        }
+      }
     }
 
     // Create system prompt with agency context
@@ -58,16 +108,37 @@ export async function POST(req: Request) {
 
     // Stream response using AI SDK with GPT-5.2
     // stopWhen controls when to stop multi-step tool calls
+    // onFinish saves the assistant response to the database
     const result = streamText({
       model: openai('gpt-5.2'),
       messages: modelMessages,
       system: systemPrompt,
       tools,
       stopWhen: stepCountIs(3),
+      onFinish: async ({ text }) => {
+        // Save assistant response to database
+        if (text && activeConversationId) {
+          const { error } = await saveMessage(activeConversationId, 'assistant', text)
+          if (error) {
+            console.error('[ChatAPI]', { action: 'saveAssistantMessage', error })
+          }
+        }
+      },
     })
 
     // Return UI message stream response for useChat hook compatibility
-    return result.toUIMessageStreamResponse()
+    // Include conversationId in response headers for client to use
+    const response = result.toUIMessageStreamResponse()
+
+    // Clone the response to add custom headers
+    const headers = new Headers(response.headers)
+    headers.set('X-Conversation-Id', activeConversationId)
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
   } catch (error) {
     console.error('[ChatAPI]', { error: error instanceof Error ? error.message : 'Unknown error' })
 

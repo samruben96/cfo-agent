@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 
+import { getMostRecentConversation } from '@/lib/conversations'
 import { createClient } from '@/lib/supabase/server'
 
 import { ChatClient } from './ChatClient'
@@ -26,9 +27,12 @@ async function ChatContent() {
     redirect('/onboarding')
   }
 
+  // Load most recent conversation for this user (AC #2)
+  const { data: recentConversation } = await getMostRecentConversation(user.id)
+
   // Profile data (agency_name, employee_count, annual_revenue_range) is fetched
   // server-side in /api/chat for security - prevents client manipulation
-  return <ChatClient />
+  return <ChatClient initialConversationId={recentConversation?.id} />
 }
 
 export default function ChatPage() {

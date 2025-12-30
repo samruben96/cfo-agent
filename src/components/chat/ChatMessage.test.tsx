@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi } from 'vitest'
 
 import { ChatMessage } from './ChatMessage'
 
@@ -31,21 +32,35 @@ describe('ChatMessage', () => {
     const { container } = render(<ChatMessage message={mockUserMessage} variant="user" />)
 
     const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('justify-end')
+    expect(wrapper).toHaveClass('items-end')
   })
 
   it('applies assistant variant styles with left alignment', () => {
     const { container } = render(<ChatMessage message={mockAssistantMessage} variant="assistant" />)
 
     const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('justify-start')
+    expect(wrapper).toHaveClass('items-start')
+  })
+
+  it('renders data-role attribute for user messages', () => {
+    const { container } = render(<ChatMessage message={mockUserMessage} variant="user" />)
+
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper).toHaveAttribute('data-role', 'user')
+  })
+
+  it('renders data-role attribute for assistant messages', () => {
+    const { container } = render(<ChatMessage message={mockAssistantMessage} variant="assistant" />)
+
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper).toHaveAttribute('data-role', 'assistant')
   })
 
   it('defaults to assistant variant', () => {
     const { container } = render(<ChatMessage message={mockAssistantMessage} />)
 
     const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('justify-start')
+    expect(wrapper).toHaveClass('items-start')
   })
 
   it('displays timestamp in time element', () => {
@@ -150,5 +165,109 @@ describe('ChatMessage', () => {
 
     expect(screen.getByText('First item')).toBeInTheDocument()
     expect(screen.getByText('Second item')).toBeInTheDocument()
+  })
+
+  describe('suggested questions', () => {
+    const mockOnSuggestionClick = vi.fn()
+    const mockSuggestions = [
+      'How does this compare?',
+      'Can I afford to hire?',
+      'Show breakdown'
+    ]
+
+    beforeEach(() => {
+      mockOnSuggestionClick.mockClear()
+    })
+
+    it('renders suggestions for completed assistant messages', () => {
+      render(
+        <ChatMessage
+          message={mockAssistantMessage}
+          variant="assistant"
+          suggestions={mockSuggestions}
+          onSuggestionClick={mockOnSuggestionClick}
+          isComplete={true}
+        />
+      )
+
+      expect(screen.getByText('How does this compare?')).toBeInTheDocument()
+      expect(screen.getByText('Can I afford to hire?')).toBeInTheDocument()
+      expect(screen.getByText('Show breakdown')).toBeInTheDocument()
+    })
+
+    it('does not render suggestions when isComplete is false', () => {
+      render(
+        <ChatMessage
+          message={mockAssistantMessage}
+          variant="assistant"
+          suggestions={mockSuggestions}
+          onSuggestionClick={mockOnSuggestionClick}
+          isComplete={false}
+        />
+      )
+
+      expect(screen.queryByText('How does this compare?')).not.toBeInTheDocument()
+    })
+
+    it('does not render suggestions for user messages', () => {
+      render(
+        <ChatMessage
+          message={mockUserMessage}
+          variant="user"
+          suggestions={mockSuggestions}
+          onSuggestionClick={mockOnSuggestionClick}
+          isComplete={true}
+        />
+      )
+
+      expect(screen.queryByText('How does this compare?')).not.toBeInTheDocument()
+    })
+
+    it('calls onSuggestionClick when suggestion is clicked', async () => {
+      const user = userEvent.setup()
+
+      render(
+        <ChatMessage
+          message={mockAssistantMessage}
+          variant="assistant"
+          suggestions={mockSuggestions}
+          onSuggestionClick={mockOnSuggestionClick}
+          isComplete={true}
+        />
+      )
+
+      await user.click(screen.getByText('Can I afford to hire?'))
+
+      expect(mockOnSuggestionClick).toHaveBeenCalledWith('Can I afford to hire?')
+    })
+
+    it('does not render suggestions when array is empty', () => {
+      const { container } = render(
+        <ChatMessage
+          message={mockAssistantMessage}
+          variant="assistant"
+          suggestions={[]}
+          onSuggestionClick={mockOnSuggestionClick}
+          isComplete={true}
+        />
+      )
+
+      // No suggestion buttons should be rendered
+      const buttons = container.querySelectorAll('button')
+      expect(buttons).toHaveLength(0)
+    })
+
+    it('does not render suggestions when onSuggestionClick is not provided', () => {
+      render(
+        <ChatMessage
+          message={mockAssistantMessage}
+          variant="assistant"
+          suggestions={mockSuggestions}
+          isComplete={true}
+        />
+      )
+
+      expect(screen.queryByText('How does this compare?')).not.toBeInTheDocument()
+    })
   })
 })

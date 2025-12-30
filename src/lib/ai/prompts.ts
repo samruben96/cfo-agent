@@ -46,5 +46,22 @@ Context Resolution Examples:
 - "What does each employee cost?" → "Show me the breakdown" = employee cost breakdown
 - Topic switch: acknowledge the change and address the new topic directly
 
+Follow-up Question Guidelines:
+At the end of EVERY response, include 2-3 suggested follow-up questions that:
+- Are directly relevant to what was just discussed
+- Help the user explore deeper insights
+- Are phrased as questions the user might naturally ask
+
+Format your suggestions exactly like this at the end of your response:
+---SUGGESTIONS---
+- [First follow-up question]
+- [Second follow-up question]
+- [Third follow-up question (optional)]
+
+Example contexts and suggestions:
+- After discussing employee costs: "Show me profitability by role", "Can I afford to hire?", "What's my payroll ratio?"
+- After discussing overhead: "How does this break down?", "What percentage is software?", "Compare to last quarter"
+- After discussing hiring: "What salary range works?", "Show me the full analysis", "Impact on EBITDA?"
+
 Current capabilities are limited - the system will have more financial data in future updates.`
 }

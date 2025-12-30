@@ -9,6 +9,12 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }))
 
+vi.mock('@/lib/conversations', () => ({
+  createConversation: vi.fn(),
+  saveMessage: vi.fn(),
+  updateConversationTitle: vi.fn(),
+}))
+
 vi.mock('ai', () => ({
   streamText: vi.fn(),
   convertToModelMessages: vi.fn().mockResolvedValue([]),
@@ -19,6 +25,7 @@ vi.mock('ai', () => ({
 
 import { POST } from './route'
 import { createClient } from '@/lib/supabase/server'
+import { createConversation, saveMessage, updateConversationTitle } from '@/lib/conversations'
 import { streamText, convertToModelMessages } from 'ai'
 
 describe('POST /api/chat', () => {
@@ -28,11 +35,19 @@ describe('POST /api/chat', () => {
     employee_count: 10,
     annual_revenue_range: '$1M-$5M',
   }
+  const mockConversationId = 'conv-456'
 
   beforeEach(() => {
     vi.clearAllMocks()
     // Reset convertToModelMessages mock to return messages passed in
     vi.mocked(convertToModelMessages).mockImplementation(async (messages) => messages as never)
+    // Default conversation mocks
+    vi.mocked(createConversation).mockResolvedValue({
+      data: { id: mockConversationId, user_id: mockUser.id, title: null, created_at: '', updated_at: '' },
+      error: null,
+    })
+    vi.mocked(saveMessage).mockResolvedValue({ data: null, error: null })
+    vi.mocked(updateConversationTitle).mockResolvedValue({ data: null, error: null })
   })
 
   const createMockRequest = (body: unknown) => {
@@ -162,8 +177,10 @@ describe('POST /api/chat', () => {
 
     const response = await POST(request)
 
-    expect(response).toBe(mockResponse)
+    // Response is wrapped to add conversation headers
+    expect(response.status).toBe(200)
     expect(mockStreamResponse.toUIMessageStreamResponse).toHaveBeenCalled()
+    expect(response.headers.get('X-Conversation-Id')).toBe(mockConversationId)
   })
 
   it('includes agency context in system prompt when profile exists', async () => {
@@ -418,6 +435,210 @@ describe('POST /api/chat', () => {
         expect.objectContaining({
           tools: expect.any(Object),
         })
+      )
+    })
+  })
+
+  describe('conversation persistence', () => {
+    it('creates a new conversation when conversationId is not provided', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', content: 'Hello' }],
+      })
+
+      await POST(request)
+
+      expect(createConversation).toHaveBeenCalledWith(mockUser.id)
+    })
+
+    it('uses existing conversationId when provided', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const existingConvId = 'existing-conv-789'
+      const request = createMockRequest({
+        messages: [{ role: 'user', content: 'Hello' }],
+        conversationId: existingConvId,
+      })
+
+      await POST(request)
+
+      expect(createConversation).not.toHaveBeenCalled()
+    })
+
+    it('saves user message to database', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello world' }] }],
+      })
+
+      await POST(request)
+
+      expect(saveMessage).toHaveBeenCalledWith(
+        mockConversationId,
+        'user',
+        'Hello world'
+      )
+    })
+
+    it('auto-generates conversation title from first message', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'What is my payroll ratio?' }] }],
+      })
+
+      await POST(request)
+
+      expect(updateConversationTitle).toHaveBeenCalledWith(
+        mockConversationId,
+        'What is my payroll ratio?'
+      )
+    })
+
+    it('truncates long titles to 50 characters', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const longMessage = 'This is a very long message that exceeds fifty characters and should be truncated'
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: longMessage }] }],
+      })
+
+      await POST(request)
+
+      expect(updateConversationTitle).toHaveBeenCalledWith(
+        mockConversationId,
+        'This is a very long message that exceeds fifty ...'
+      )
+    })
+
+    it('does not update title when using existing conversation', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello' }] }],
+        conversationId: 'existing-conv',
+      })
+
+      await POST(request)
+
+      expect(updateConversationTitle).not.toHaveBeenCalled()
+    })
+
+    it('includes conversationId in response headers', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('stream')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello' }] }],
+      })
+
+      const response = await POST(request)
+
+      expect(response.headers.get('X-Conversation-Id')).toBe(mockConversationId)
+    })
+
+    it('returns 500 when conversation creation fails', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+      vi.mocked(createConversation).mockResolvedValue({
+        data: null,
+        error: 'Database error',
+      })
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello' }] }],
+      })
+
+      const response = await POST(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(500)
+      expect(data.error).toBe('Failed to create conversation')
+    })
+
+    it('continues even when saving user message fails', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+      vi.mocked(saveMessage).mockResolvedValue({
+        data: null,
+        error: 'Save failed',
+      })
+
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockReturnValue(mockStreamResponse as never)
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello' }] }],
+      })
+
+      const response = await POST(request)
+
+      // Should still return streaming response
+      expect(response.status).toBe(200)
+    })
+
+    it('saves assistant response via onFinish callback', async () => {
+      mockSupabaseClient({ user: mockUser, profile: mockProfile })
+
+      let capturedOnFinish: ((result: { text: string }) => Promise<void>) | undefined
+      const mockStreamResponse = {
+        toUIMessageStreamResponse: vi.fn().mockReturnValue(new Response('')),
+      }
+      vi.mocked(streamText).mockImplementation((options) => {
+        capturedOnFinish = options.onFinish as (result: { text: string }) => Promise<void>
+        return mockStreamResponse as never
+      })
+
+      const request = createMockRequest({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hello' }] }],
+      })
+
+      await POST(request)
+
+      // Simulate onFinish being called
+      expect(capturedOnFinish).toBeDefined()
+      await capturedOnFinish!({ text: 'Hello! How can I help you?' })
+
+      expect(saveMessage).toHaveBeenCalledWith(
+        mockConversationId,
+        'assistant',
+        'Hello! How can I help you?'
       )
     })
   })

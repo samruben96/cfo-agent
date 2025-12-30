@@ -1,14 +1,19 @@
 'use client'
 
+import { SuggestedQuestions } from '@/components/chat/SuggestedQuestions'
+import { getCleanResponse } from '@/lib/ai/parse-suggestions'
 import { cn } from '@/lib/utils'
 
 import type { UIMessage } from 'ai'
 
-function getMessageContent(message: UIMessage): string {
-  return message.parts
+function getMessageContent(message: UIMessage, stripSuggestions = false): string {
+  const content = message.parts
     .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
     .map((part) => part.text)
     .join('')
+
+  // Strip the suggestions section if requested (for display purposes)
+  return stripSuggestions ? getCleanResponse(content) : content
 }
 
 function formatMarkdown(text: string): React.ReactNode {
@@ -100,6 +105,9 @@ interface ChatMessageProps {
   variant?: 'user' | 'assistant'
   className?: string
   timestamp?: Date
+  suggestions?: string[]
+  onSuggestionClick?: (question: string) => void
+  isComplete?: boolean
 }
 
 function getMessageTimestamp(timestamp?: Date): string {
@@ -112,16 +120,30 @@ export function ChatMessage({
   message,
   variant = 'assistant',
   className,
-  timestamp
+  timestamp,
+  suggestions,
+  onSuggestionClick,
+  isComplete
 }: ChatMessageProps) {
   const isUser = variant === 'user'
-  const content = getMessageContent(message)
+
+  // Always strip suggestions section from assistant messages (even during streaming)
+  const content = getMessageContent(message, !isUser)
+
+  // Only show suggestions for completed assistant messages with a handler
+  const showSuggestions =
+    !isUser &&
+    isComplete &&
+    suggestions &&
+    suggestions.length > 0 &&
+    onSuggestionClick
 
   return (
     <div
+      data-role={isUser ? 'user' : 'assistant'}
       className={cn(
-        'flex w-full',
-        isUser ? 'justify-end' : 'justify-start',
+        'flex w-full flex-col',
+        isUser ? 'items-end' : 'items-start',
         className
       )}
     >
@@ -140,6 +162,13 @@ export function ChatMessage({
           {getMessageTimestamp(timestamp)}
         </time>
       </div>
+      {showSuggestions && (
+        <SuggestedQuestions
+          questions={suggestions}
+          onClick={onSuggestionClick}
+          className="mt-2 max-w-[80%]"
+        />
+      )}
     </div>
   )
 }
