@@ -25,6 +25,7 @@ export type Database = {
           id: string
           monthly_overhead_estimate: number | null
           onboarding_complete: boolean
+          onboarding_step: number
           top_financial_question: string | null
           updated_at: string
           user_role: string | null
@@ -39,6 +40,7 @@ export type Database = {
           id: string
           monthly_overhead_estimate?: number | null
           onboarding_complete?: boolean
+          onboarding_step?: number
           top_financial_question?: string | null
           updated_at?: string
           user_role?: string | null
@@ -53,6 +55,7 @@ export type Database = {
           id?: string
           monthly_overhead_estimate?: number | null
           onboarding_complete?: boolean
+          onboarding_step?: number
           top_financial_question?: string | null
           updated_at?: string
           user_role?: string | null

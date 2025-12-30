@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -44,9 +44,30 @@ export function LoginForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Handle success message from password reset
+  useEffect(() => {
+    const message = searchParams.get("message");
+    if (message === "password-updated") {
+      setSuccessMessage("Password updated successfully. Please log in.");
+      // Auto-clear after 5 seconds
+      const timer = setTimeout(() => {
+        setSuccessMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams]);
+
+  // Clear success message on form interaction
+  const clearSuccessMessage = () => {
+    if (successMessage) {
+      setSuccessMessage(null);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,6 +133,9 @@ export function LoginForm({
         <CardContent>
           <form onSubmit={handleLogin}>
             <div className="flex flex-col gap-6">
+              {successMessage && (
+                <p className="text-sm text-green-600">{successMessage}</p>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -120,7 +144,10 @@ export function LoginForm({
                   placeholder="m@example.com"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clearSuccessMessage();
+                  }}
                 />
               </div>
               <div className="grid gap-2">
@@ -138,7 +165,10 @@ export function LoginForm({
                   type="password"
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearSuccessMessage();
+                  }}
                 />
               </div>
               {error && (

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -321,6 +321,75 @@ describe("LoginForm", () => {
       const signUpLink = screen.getByRole("link", { name: /sign up/i });
       expect(signUpLink).toBeInTheDocument();
       expect(signUpLink).toHaveAttribute("href", "/auth/sign-up");
+    });
+  });
+
+  // Password reset success message (AC: Story 1.5 #3)
+  describe("password reset success message", () => {
+    it("shows success message when redirected from password reset", () => {
+      mockSearchParams.set("message", "password-updated");
+
+      render(<LoginForm />);
+
+      expect(
+        screen.getByText(/password updated successfully/i)
+      ).toBeInTheDocument();
+    });
+
+    it("clears success message on email input change", async () => {
+      mockSearchParams.set("message", "password-updated");
+
+      render(<LoginForm />);
+
+      expect(
+        screen.getByText(/password updated successfully/i)
+      ).toBeInTheDocument();
+
+      const emailInput = screen.getByLabelText(/email/i);
+      await userEvent.type(emailInput, "t");
+
+      expect(
+        screen.queryByText(/password updated successfully/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it("clears success message on password input change", async () => {
+      mockSearchParams.set("message", "password-updated");
+
+      render(<LoginForm />);
+
+      expect(
+        screen.getByText(/password updated successfully/i)
+      ).toBeInTheDocument();
+
+      const passwordInput = screen.getByLabelText(/password/i);
+      await userEvent.type(passwordInput, "t");
+
+      expect(
+        screen.queryByText(/password updated successfully/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it("auto-clears success message after 5 seconds", async () => {
+      vi.useFakeTimers();
+      mockSearchParams.set("message", "password-updated");
+
+      render(<LoginForm />);
+
+      expect(
+        screen.getByText(/password updated successfully/i)
+      ).toBeInTheDocument();
+
+      // Fast-forward 5 seconds with act() to properly handle state updates
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(
+        screen.queryByText(/password updated successfully/i)
+      ).not.toBeInTheDocument();
+
+      vi.useRealTimers();
     });
   });
 });

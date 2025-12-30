@@ -1,23 +1,47 @@
+import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
+
+import { getProfile } from '@/actions/profile'
+import { AgencyProfileForm, BackToChatLink } from '@/components/settings'
+
+async function SettingsContent() {
+  const { data: profile, error } = await getProfile()
+
+  if (error === 'Not authenticated') {
+    redirect('/auth/login')
+  }
+
+  return (
+    <>
+      {error ? (
+        <div className="p-lg bg-destructive/10 border border-destructive/20 rounded-lg text-center">
+          <p className="text-destructive">{error}</p>
+        </div>
+      ) : profile ? (
+        <AgencyProfileForm initialData={profile} />
+      ) : null}
+    </>
+  )
+}
+
 export default function SettingsPage() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-theme(height.header))]">
-      <div className="w-full max-w-chat px-md">
-        <div className="flex flex-col items-center justify-center py-2xl text-center">
+    <div className="flex flex-col items-center min-h-[calc(100vh-theme(height.header))] pt-lg">
+      <div className="w-full max-w-chat px-md py-xl">
+        {/* Back to Chat link */}
+        <BackToChatLink />
+
+        <div className="flex flex-col items-center text-center mb-xl">
           <h1 className="text-h1 text-primary mb-md">Settings</h1>
           <p className="text-body text-muted-foreground max-w-md">
-            Manage your account preferences, notification settings, and
-            connected services.
+            Manage your agency profile and account preferences.
           </p>
         </div>
 
-        <div className="mt-xl">
-          <div className="flex items-center justify-center p-lg bg-surface border border-dashed border-border rounded-lg">
-            <span className="text-body-sm text-muted-foreground">
-              Settings panel coming soon
-            </span>
-          </div>
-        </div>
+        <Suspense fallback={<div className="text-muted-foreground text-center">Loading profile...</div>}>
+          <SettingsContent />
+        </Suspense>
       </div>
     </div>
-  );
+  )
 }

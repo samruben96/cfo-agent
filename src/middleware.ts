@@ -60,6 +60,34 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Onboarding redirect logic for authenticated users
+  if (user && isProtectedPath) {
+    const isOnboardingPath = request.nextUrl.pathname === "/onboarding";
+
+    // Check onboarding status from profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_complete")
+      .eq("id", user.id)
+      .single();
+
+    const isOnboardingComplete = profile?.onboarding_complete ?? false;
+
+    // Redirect to onboarding if not complete (except if already there)
+    if (!isOnboardingComplete && !isOnboardingPath) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+
+    // Redirect away from onboarding if already complete
+    if (isOnboardingComplete && isOnboardingPath) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/chat";
+      return NextResponse.redirect(url);
+    }
+  }
+
   return supabaseResponse;
 }
 

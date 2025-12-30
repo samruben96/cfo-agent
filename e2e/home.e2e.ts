@@ -8,8 +8,9 @@ test.describe("Home page", () => {
 });
 
 test.describe("Chat page", () => {
-  test("displays welcome message", async ({ page }) => {
+  test("redirects to login when unauthenticated", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.getByText("Welcome to BFI CFO Bot")).toBeVisible();
+    // Chat is protected, so it should redirect to login
+    await expect(page).toHaveURL(/\/auth\/login/);
   });
 });

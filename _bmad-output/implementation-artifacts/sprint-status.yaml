@@ -39,18 +39,18 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # Epic 1: Foundation & Authentication
-  epic-1: in-progress
+  epic-1: done
   1-1-project-initialization-app-shell: done
   1-2-database-schema-rls-foundation: done
   1-3-user-registration: done
   1-4-user-login-logout: done
-  1-5-password-reset: backlog
-  epic-1-retrospective: optional
+  1-5-password-reset: done
+  epic-1-retrospective: done
 
   # Epic 2: Onboarding & Conversational Core
-  epic-2: backlog
-  2-1-onboarding-flow: backlog
-  2-2-agency-profile-management: backlog
+  epic-2: in-progress
+  2-1-onboarding-flow: done
+  2-2-agency-profile-management: done
   2-3-chat-interface-message-display: backlog
   2-4-send-message-get-ai-response: backlog
   2-5-conversation-context-follow-ups: backlog
