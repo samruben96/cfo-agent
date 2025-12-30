@@ -46,9 +46,11 @@ describe('useConversations', () => {
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({
-              data: options.conversations === null ? null : (options.conversations ?? mockConversations),
-              error: options.error ?? null,
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: options.conversations === null ? null : (options.conversations ?? mockConversations),
+                error: options.error ?? null,
+              }),
             }),
           }),
         }),

@@ -40,11 +40,11 @@ export function ChatContainer({ children, className }: ChatContainerProps) {
   }
 
   return (
-    <div className={cn('relative flex flex-col h-full', className)}>
+    <div className={cn('relative flex flex-col min-h-0', className)}>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-md pt-xl pb-lg"
+        className="flex-1 overflow-y-auto min-h-0 px-md pt-xl pb-lg bg-surface"
         data-testid="chat-messages-container"
         role="log"
         aria-live="polite"

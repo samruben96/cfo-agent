@@ -40,6 +40,7 @@ export function useConversations(): UseConversationsResult {
         .select('*')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false })
+        .limit(50)
 
       if (fetchError) {
         console.error('[useConversations]', { error: fetchError.message })

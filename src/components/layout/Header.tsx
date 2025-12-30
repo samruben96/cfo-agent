@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { PanelRightClose, Settings } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Database, PanelRightClose, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./UserMenu";
 
@@ -22,6 +28,9 @@ export function Header({
   className,
 }: HeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
+
+  const isDataRoute = pathname?.startsWith("/data");
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -31,6 +40,16 @@ export function Header({
       windowWithHandler.__handleSettingsNavigation("/chat");
     } else {
       router.push("/chat");
+    }
+  };
+
+  const handleDataNavigation = (href: string) => {
+    const windowWithHandler = window as WindowWithNavHandler;
+
+    if (windowWithHandler.__handleSettingsNavigation) {
+      windowWithHandler.__handleSettingsNavigation(href);
+    } else {
+      router.push(href);
     }
   };
 
@@ -52,8 +71,44 @@ export function Header({
           </span>
         </button>
 
-        {/* Icon Buttons */}
+        {/* Navigation and Icon Buttons */}
         <div className="flex items-center gap-xs">
+          {/* Data Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "gap-1.5",
+                  isDataRoute && "bg-accent text-accent-foreground"
+                )}
+                aria-label="Data menu"
+              >
+                <Database className="h-4 w-4" />
+                Data
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => handleDataNavigation("/data/overhead")}
+                className={cn(
+                  pathname === "/data/overhead" && "bg-accent"
+                )}
+              >
+                Overhead Costs
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDataNavigation("/data/employees")}
+                className={cn(
+                  pathname === "/data/employees" && "bg-accent"
+                )}
+              >
+                Employees
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"

@@ -70,6 +70,84 @@ export type Database = {
         }
         Relationships: []
       }
+      employees: {
+        Row: {
+          annual_benefits: number | null
+          annual_salary: number
+          created_at: string
+          department: string | null
+          employee_id: string | null
+          employment_type: string
+          id: string
+          name: string
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          annual_benefits?: number | null
+          annual_salary?: number
+          created_at?: string
+          department?: string | null
+          employee_id?: string | null
+          employment_type?: string
+          id?: string
+          name: string
+          role: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          annual_benefits?: number | null
+          annual_salary?: number
+          created_at?: string
+          department?: string | null
+          employee_id?: string | null
+          employment_type?: string
+          id?: string
+          name?: string
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      overhead_costs: {
+        Row: {
+          created_at: string
+          id: string
+          monthly_insurance: number | null
+          monthly_rent: number | null
+          monthly_utilities: number | null
+          other_monthly_costs: number | null
+          software_costs: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          monthly_insurance?: number | null
+          monthly_rent?: number | null
+          monthly_utilities?: number | null
+          other_monthly_costs?: number | null
+          software_costs?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          monthly_insurance?: number | null
+          monthly_rent?: number | null
+          monthly_utilities?: number | null
+          other_monthly_costs?: number | null
+          software_costs?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           agency_name: string | null

@@ -6,7 +6,11 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { toast } from 'sonner'
 
-import { ChatContainer, ChatMessage, ChatInput, TypingIndicator, EmptyState, NewConversationButton } from '@/components/chat'
+import { History } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ChatContainer, ChatMessage, ChatInput, TypingIndicator, EmptyState, NewConversationButton, ConversationHistoryPanel } from '@/components/chat'
 import { useConversation } from '@/hooks/use-conversation'
 import { parseSuggestions } from '@/lib/ai/parse-suggestions'
 
@@ -28,6 +32,7 @@ export function ChatClient({
 
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId)
   const [input, setInput] = useState('')
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const lastInputRef = useRef('')
 
   // Load conversation history when conversationId changes
@@ -110,6 +115,13 @@ export function ChatClient({
     onConversationChange?.(undefined)
   }, [setMessages, onConversationChange])
 
+  // Handle selecting a conversation from history
+  const handleSelectConversation = useCallback((selectedId: string) => {
+    setConversationId(selectedId)
+    setMessages([]) // Clear messages - they will be loaded by useConversation
+    onConversationChange?.(selectedId)
+  }, [setMessages, onConversationChange])
+
   // error is tracked by useChat but toast handles user notification in onError callback
   void error
 
@@ -165,15 +177,32 @@ export function ChatClient({
 
   return (
     <div className={`flex flex-col h-full ${className || ''}`}>
-      {/* Chat header with New Conversation button */}
-      {showNewConversationButton && (
-        <div className="flex justify-end px-4 py-2 border-b">
+      {/* Chat header with History and New Conversation buttons */}
+      <div className="flex items-center justify-between px-4 py-2 border-b">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsHistoryOpen(true)}
+                aria-label="View conversation history"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Conversation History</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {showNewConversationButton && (
           <NewConversationButton
             onClick={handleNewConversation}
             disabled={isLoading || isLoadingHistory}
           />
-        </div>
-      )}
+        )}
+      </div>
       <ChatContainer className="flex-1">
         {isLoadingHistory && conversationId ? (
           // Show loading state while fetching conversation history
@@ -212,6 +241,14 @@ export function ChatClient({
         onChange={handleInputChange}
         onSubmit={handleSubmit}
         disabled={isLoading || isLoadingHistory}
+      />
+
+      {/* Conversation History Panel */}
+      <ConversationHistoryPanel
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        selectedConversationId={conversationId}
+        onSelectConversation={handleSelectConversation}
       />
     </div>
   )

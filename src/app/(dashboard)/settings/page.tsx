@@ -26,8 +26,9 @@ async function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <div className="flex flex-col items-center min-h-[calc(100vh-theme(height.header))] pt-lg">
-      <div className="w-full max-w-chat px-md py-xl">
+    // h-full fills the fixed main area, overflow-y-auto enables scrolling
+    <div className="h-full overflow-y-auto">
+      <div className="w-full max-w-2xl mx-auto px-md py-xl">
         {/* Back to Chat link */}
         <BackToChatLink />
 

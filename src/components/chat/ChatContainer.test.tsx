@@ -119,7 +119,7 @@ describe('ChatContainer', () => {
     )
 
     const wrapper = container.firstChild as HTMLElement
-    expect(wrapper).toHaveClass('h-full')
+    expect(wrapper).toHaveClass('min-h-0')
     expect(wrapper).toHaveClass('flex')
     expect(wrapper).toHaveClass('flex-col')
   })
