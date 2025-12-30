@@ -47,6 +47,7 @@ supabase/.temp/
 # BMAD workflow files (local only)
 _bmad/
 _bmad-output/
+.claude/commands/bmad/
 
 # Playwright
 playwright-report/
