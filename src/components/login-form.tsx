@@ -1,7 +1,11 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,9 +16,26 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+
+// Email validation regex (from Story 1.3 pattern)
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Minimum password length (matches Supabase default)
+const MIN_PASSWORD_LENGTH = 6;
+
+/**
+ * Validates that a redirect URL is safe (internal path only).
+ * Prevents open redirect attacks.
+ */
+function isValidRedirectUrl(url: string): boolean {
+  // Must start with / and not contain protocol or double slashes
+  if (!url.startsWith("/")) return false;
+  if (url.startsWith("//")) return false;
+  if (url.includes("://")) return false;
+  // Block javascript: and other protocol handlers
+  if (url.toLowerCase().includes("javascript:")) return false;
+  return true;
+}
 
 export function LoginForm({
   className,
@@ -25,23 +46,55 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const supabase = createClient();
-    setIsLoading(true);
     setError(null);
 
+    // Client-side email validation
+    if (!EMAIL_REGEX.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    // Client-side password length validation
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/protected");
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+
+      if (authError) {
+        // Map Supabase errors to friendly messages - never expose raw errors
+        if (authError.message.includes("Invalid login credentials")) {
+          setError("Invalid email or password");
+          return;
+        }
+        // Generic fallback for any other auth error
+        setError("Unable to sign in. Please try again.");
+        return;
+      }
+
+      // Get redirectTo from URL or default to /chat
+      // Validate to prevent open redirect attacks
+      const requestedRedirect = searchParams.get("redirectTo");
+      const redirectTo =
+        requestedRedirect && isValidRedirectUrl(requestedRedirect)
+          ? requestedRedirect
+          : "/chat";
+      router.push(redirectTo);
+    } catch {
+      // Unexpected errors - never expose details
+      setError("Unable to sign in. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -51,9 +104,9 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardTitle className="text-2xl">Log In</CardTitle>
           <CardDescription>
-            Enter your email below to login to your account
+            Enter your email below to log in to your account
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -88,9 +141,11 @@ export function LoginForm({
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
+                {isLoading ? "Logging in..." : "Log In"}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">

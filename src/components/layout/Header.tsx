@@ -1,7 +1,8 @@
-import { PanelRightClose, Settings, User } from "lucide-react";
+import { PanelRightClose, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { UserMenu } from "./UserMenu";
 
 interface HeaderProps {
   onPanelToggle?: () => void;
@@ -47,9 +48,7 @@ export function Header({
           <Button variant="ghost" size="icon" aria-label="Settings">
             <Settings className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="User menu">
-            <User className="h-5 w-5" />
-          </Button>
+          <UserMenu />
         </div>
       </div>
     </header>
