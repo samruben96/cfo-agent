@@ -233,9 +233,30 @@ Every table MUST have RLS enabled with user-scoped policies:
 ```sql
 ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users access own data" ON table_name
-  FOR ALL USING (auth.uid() = user_id);
+-- Use (select auth.uid()) for optimizer caching (2025 best practice)
+-- Create SEPARATE policies for each operation (SELECT, INSERT, UPDATE, DELETE)
+CREATE POLICY "Users can view own data" ON table_name
+  FOR SELECT TO authenticated
+  USING ((select auth.uid()) = user_id);
+
+CREATE POLICY "Users can insert own data" ON table_name
+  FOR INSERT TO authenticated
+  WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "Users can update own data" ON table_name
+  FOR UPDATE TO authenticated
+  USING ((select auth.uid()) = user_id)
+  WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "Users can delete own data" ON table_name
+  FOR DELETE TO authenticated
+  USING ((select auth.uid()) = user_id);
 ```
+
+**RLS Best Practices:**
+- Use `(select auth.uid())` instead of bare `auth.uid()` for Postgres optimizer caching
+- Always specify `TO authenticated` role
+- Create SEPARATE policies for each operation - never use `FOR ALL`
 
 ### Never Expose
 - Raw database errors to users

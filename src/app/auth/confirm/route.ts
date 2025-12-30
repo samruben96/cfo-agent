@@ -7,7 +7,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
+  // Check both 'next' (legacy) and 'redirect' params, default to onboarding for new users
+  const next =
+    searchParams.get("next") ||
+    searchParams.get("redirect") ||
+    "/onboarding";
 
   if (token_hash && type) {
     const supabase = await createClient();
@@ -17,7 +21,7 @@ export async function GET(request: NextRequest) {
       token_hash,
     });
     if (!error) {
-      // redirect user to specified redirect URL or root of app
+      // redirect user to specified redirect URL or onboarding for new signups
       redirect(next);
     } else {
       // redirect the user to an error page with some instructions
