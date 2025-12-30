@@ -19,11 +19,11 @@ export default function DashboardLayout({
         isPanelOpen={isPanelOpen}
       />
 
-      {/* Main content area */}
+      {/* Main content area - starts after fixed header (56px) */}
       <main
         className={cn(
-          "pt-header transition-all duration-200",
-          isPanelOpen ? "pr-panel" : "pr-0"
+          "fixed top-14 left-0 right-0 bottom-0 overflow-hidden transition-all duration-200",
+          isPanelOpen ? "right-[280px]" : "right-0"
         )}
       >
         {children}

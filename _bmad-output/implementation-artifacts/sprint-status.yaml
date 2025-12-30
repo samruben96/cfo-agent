@@ -51,10 +51,10 @@ development_status:
   epic-2: in-progress
   2-1-onboarding-flow: done
   2-2-agency-profile-management: done
-  2-3-chat-interface-message-display: backlog
-  2-4-send-message-get-ai-response: backlog
-  2-5-conversation-context-follow-ups: backlog
-  2-6-conversational-data-input: backlog
+  2-3-chat-interface-message-display: done
+  2-4-send-message-get-ai-response: done
+  2-5-conversation-context-follow-ups: done
+  2-6-conversational-data-input: done
   2-7-suggested-follow-up-questions: backlog
   2-8-conversation-history-persistence: backlog
   2-9-view-continue-past-conversations: backlog

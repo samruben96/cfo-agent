@@ -24,6 +24,8 @@ export type Database = {
           full_name: string | null
           id: string
           monthly_overhead_estimate: number | null
+          monthly_rent: number | null
+          monthly_software_spend: number | null
           onboarding_complete: boolean
           onboarding_step: number
           top_financial_question: string | null
@@ -39,6 +41,8 @@ export type Database = {
           full_name?: string | null
           id: string
           monthly_overhead_estimate?: number | null
+          monthly_rent?: number | null
+          monthly_software_spend?: number | null
           onboarding_complete?: boolean
           onboarding_step?: number
           top_financial_question?: string | null
@@ -54,6 +58,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           monthly_overhead_estimate?: number | null
+          monthly_rent?: number | null
+          monthly_software_spend?: number | null
           onboarding_complete?: boolean
           onboarding_step?: number
           top_financial_question?: string | null

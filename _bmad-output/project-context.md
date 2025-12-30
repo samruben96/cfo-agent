@@ -86,7 +86,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 // 2. External packages
-import { useChat } from 'ai/react'
+import { useChat } from '@ai-sdk/react'
 
 // 3. Internal aliases (@/)
 import { Button } from '@/components/ui/button'
