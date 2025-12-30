@@ -43,3 +43,11 @@ next-env.d.ts
 
 # supabase
 supabase/.temp/
+
+# BMAD workflow files (local only)
+_bmad/
+_bmad-output/
+
+# Playwright
+playwright-report/
+test-results/
