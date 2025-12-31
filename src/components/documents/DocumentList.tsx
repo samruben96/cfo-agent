@@ -7,11 +7,15 @@ import { DocumentCard } from './DocumentCard'
 
 import type { Document } from '@/types/documents'
 import type { FileTypeFilter } from './DocumentsClient'
+import type { DocumentProgressState } from '@/hooks/use-processing-progress'
 
 interface DocumentListProps {
   documents: Document[]
   onDelete: (documentId: string) => Promise<void>
   onView?: (document: Document) => void
+  onRetry?: (document: Document) => void
+  /** Map of document IDs to their progress states */
+  progressMap?: Map<string, DocumentProgressState>
   fileTypeFilter?: FileTypeFilter
   className?: string
 }
@@ -43,6 +47,8 @@ export function DocumentList({
   documents,
   onDelete,
   onView,
+  onRetry,
+  progressMap,
   fileTypeFilter = 'all',
   className
 }: DocumentListProps) {
@@ -65,14 +71,20 @@ export function DocumentList({
 
   return (
     <div className={cn('space-y-3', className)}>
-      {documents.map((document) => (
-        <DocumentCard
-          key={document.id}
-          document={document}
-          onDelete={onDelete}
-          onView={onView}
-        />
-      ))}
+      {documents.map((document) => {
+        const docProgress = progressMap?.get(document.id)
+        return (
+          <DocumentCard
+            key={document.id}
+            document={document}
+            onDelete={onDelete}
+            onView={onView}
+            onRetry={onRetry}
+            processingStage={docProgress?.stage}
+            elapsedSeconds={docProgress?.elapsedSeconds}
+          />
+        )
+      })}
     </div>
   )
 }

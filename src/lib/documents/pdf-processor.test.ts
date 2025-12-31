@@ -5,7 +5,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-import { detectDocumentType, processPDF, processPDFWithFallback } from './pdf-processor'
+import {
+  detectDocumentType,
+  processPDF,
+  processPDFWithFallback,
+  processPDFWithTextExtraction,
+  processPDFWithAutoFallback,
+  PDFProcessingTimeoutError
+} from './pdf-processor'
 
 import type { PLExtraction, PayrollExtraction, GenericExtraction } from './extraction-schemas'
 
@@ -277,5 +284,259 @@ describe('processPDFWithFallback', () => {
     ).rejects.toThrow('PDF processing failed')
 
     expect(mockGenerateObject).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PDFProcessingTimeoutError', () => {
+  it('creates error with correct message', () => {
+    const error = new PDFProcessingTimeoutError(90000)
+    expect(error.message).toBe('PDF processing timed out after 90 seconds. Complex documents may require alternative processing methods.')
+    expect(error.name).toBe('PDFProcessingTimeoutError')
+  })
+
+  it('is instance of Error', () => {
+    const error = new PDFProcessingTimeoutError(90000)
+    expect(error).toBeInstanceOf(Error)
+  })
+})
+
+describe('processPDF timeout handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('throws PDFProcessingTimeoutError on abort', async () => {
+    // Simulate an abort error
+    const abortError = new Error('The operation was aborted')
+    abortError.name = 'AbortError'
+    mockGenerateObject.mockRejectedValueOnce(abortError)
+
+    await expect(
+      processPDF({
+        file: Buffer.from('mock pdf content'),
+        filename: 'complex-document.pdf',
+      })
+    ).rejects.toThrow(PDFProcessingTimeoutError)
+  })
+
+  it('throws PDFProcessingTimeoutError when error message contains abort', async () => {
+    mockGenerateObject.mockRejectedValueOnce(new Error('Request was aborted due to timeout'))
+
+    await expect(
+      processPDF({
+        file: Buffer.from('mock pdf content'),
+        filename: 'complex-document.pdf',
+      })
+    ).rejects.toThrow(PDFProcessingTimeoutError)
+  })
+
+  it('passes abortSignal to generateObject', async () => {
+    const mockPLResult: PLExtraction = {
+      documentType: 'pl',
+      revenue: { total: 100000 },
+      expenses: { total: 75000 },
+    }
+
+    mockGenerateObject.mockResolvedValueOnce({
+      object: mockPLResult,
+      finishReason: 'stop',
+      usage: { promptTokens: 100, completionTokens: 50 },
+    } as never)
+
+    await processPDF({
+      file: Buffer.from('mock pdf content'),
+      filename: 'P&L-Report.pdf',
+    })
+
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abortSignal: expect.any(AbortSignal),
+      })
+    )
+  })
+
+  it('throws regular error for non-abort failures', async () => {
+    mockGenerateObject.mockRejectedValueOnce(new Error('API rate limit exceeded'))
+
+    await expect(
+      processPDF({
+        file: Buffer.from('mock pdf content'),
+        filename: 'document.pdf',
+      })
+    ).rejects.toThrow('PDF processing failed: API rate limit exceeded')
+
+    // Should NOT be a timeout error
+    await expect(
+      processPDF({
+        file: Buffer.from('mock pdf content'),
+        filename: 'document.pdf',
+      })
+    ).rejects.not.toThrow(PDFProcessingTimeoutError)
+  })
+})
+
+// Mock the pdf-text-extractor module
+vi.mock('./pdf-text-extractor', () => ({
+  extractPDFText: vi.fn(),
+}))
+
+describe('processPDFWithTextExtraction', () => {
+  const mockPLResult: PLExtraction = {
+    documentType: 'pl',
+    revenue: { total: 100000 },
+    expenses: { total: 75000 },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('extracts text and processes with GPT-4o', async () => {
+    // Mock text extraction
+    const { extractPDFText } = await import('./pdf-text-extractor')
+    const mockExtractPDFText = vi.mocked(extractPDFText)
+    mockExtractPDFText.mockResolvedValueOnce({
+      success: true,
+      text: 'Revenue: 100000\nExpenses: 75000',
+      pageTexts: ['Revenue: 100000\nExpenses: 75000'],
+      pageCount: 1,
+      processingTimeMs: 50,
+    })
+
+    // Mock GPT-4o response
+    mockGenerateObject.mockResolvedValueOnce({
+      object: mockPLResult,
+      finishReason: 'stop',
+      usage: { promptTokens: 100, completionTokens: 50 },
+    } as never)
+
+    const result = await processPDFWithTextExtraction({
+      file: Buffer.from('mock pdf content'),
+      filename: 'P&L-Report.pdf',
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.schemaUsed).toBe('pl')
+    expect(result.extractedData).toEqual(mockPLResult)
+    expect(mockExtractPDFText).toHaveBeenCalled()
+  })
+
+  it('throws error when text extraction fails', async () => {
+    const { extractPDFText } = await import('./pdf-text-extractor')
+    const mockExtractPDFText = vi.mocked(extractPDFText)
+    mockExtractPDFText.mockResolvedValueOnce({
+      success: false,
+      text: '',
+      pageTexts: [],
+      pageCount: 0,
+      processingTimeMs: 10,
+      error: 'Invalid PDF format',
+    })
+
+    await expect(
+      processPDFWithTextExtraction({
+        file: Buffer.from('invalid pdf'),
+        filename: 'document.pdf',
+      })
+    ).rejects.toThrow('Text extraction failed: Invalid PDF format')
+  })
+})
+
+describe('processPDFWithAutoFallback', () => {
+  const mockPLResult: PLExtraction = {
+    documentType: 'pl',
+    revenue: { total: 100000 },
+    expenses: { total: 75000 },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('succeeds with Vision API on first try', async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: mockPLResult,
+      finishReason: 'stop',
+      usage: { promptTokens: 100, completionTokens: 50 },
+    } as never)
+
+    const result = await processPDFWithAutoFallback({
+      file: Buffer.from('mock pdf content'),
+      filename: 'P&L-Report.pdf',
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.schemaUsed).toBe('pl')
+  })
+
+  it('falls back to text extraction on timeout', async () => {
+    // First call times out
+    const abortError = new Error('The operation was aborted')
+    abortError.name = 'AbortError'
+    mockGenerateObject.mockRejectedValueOnce(abortError)
+
+    // Mock text extraction
+    const { extractPDFText } = await import('./pdf-text-extractor')
+    const mockExtractPDFText = vi.mocked(extractPDFText)
+    mockExtractPDFText.mockResolvedValueOnce({
+      success: true,
+      text: 'Revenue: 100000\nExpenses: 75000',
+      pageTexts: ['Revenue: 100000\nExpenses: 75000'],
+      pageCount: 1,
+      processingTimeMs: 50,
+    })
+
+    // Text extraction call succeeds
+    mockGenerateObject.mockResolvedValueOnce({
+      object: mockPLResult,
+      finishReason: 'stop',
+      usage: { promptTokens: 100, completionTokens: 50 },
+    } as never)
+
+    const result = await processPDFWithAutoFallback({
+      file: Buffer.from('mock pdf content'),
+      filename: 'P&L-Report.pdf',
+    })
+
+    expect(result.success).toBe(true)
+    // Should have called generateObject twice (once for Vision, once for text extraction)
+    expect(mockGenerateObject).toHaveBeenCalledTimes(2)
+  })
+
+  it('rethrows non-timeout errors', async () => {
+    mockGenerateObject.mockRejectedValueOnce(new Error('API rate limit exceeded'))
+
+    await expect(
+      processPDFWithAutoFallback({
+        file: Buffer.from('mock pdf content'),
+        filename: 'document.pdf',
+      })
+    ).rejects.toThrow('PDF processing failed: API rate limit exceeded')
+  })
+
+  it('throws combined error when both Vision and text extraction fail', async () => {
+    // First call times out
+    const abortError = new Error('The operation was aborted')
+    abortError.name = 'AbortError'
+    mockGenerateObject.mockRejectedValueOnce(abortError)
+
+    // Mock text extraction to fail
+    const { extractPDFText } = await import('./pdf-text-extractor')
+    const mockExtractPDFText = vi.mocked(extractPDFText)
+    mockExtractPDFText.mockResolvedValueOnce({
+      success: false,
+      text: '',
+      pageTexts: [],
+      pageCount: 0,
+      processingTimeMs: 10,
+      error: 'Invalid PDF format',
+    })
+
+    await expect(
+      processPDFWithAutoFallback({
+        file: Buffer.from('mock pdf content'),
+        filename: 'document.pdf',
+      })
+    ).rejects.toThrow('Vision API timed out, and text extraction fallback failed')
   })
 })

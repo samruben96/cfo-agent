@@ -1,6 +1,6 @@
 /**
  * Document components for CSV/PDF file upload and management.
- * Story: 3.3 CSV File Upload, 3.4 PDF Document Upload
+ * Story: 3.3 CSV File Upload, 3.4 PDF Document Upload, 3.5 Document Processing Status
  */
 
 export { DocumentDropZone } from './DocumentDropZone'
@@ -10,6 +10,10 @@ export { DocumentCard } from './DocumentCard'
 export { DocumentList } from './DocumentList'
 export { DocumentsClient } from './DocumentsClient'
 export { PDFExtractionPreview } from './PDFExtractionPreview'
+export { ProcessingProgress } from './ProcessingProgress'
+export { ProcessingErrorHelp } from './ProcessingErrorHelp'
 
 // Types
 export type { FileTypeFilter } from './DocumentsClient'
+export type { ProcessingStage } from './ProcessingProgress'
+export type { ErrorCategory } from './ProcessingErrorHelp'

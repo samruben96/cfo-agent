@@ -7,6 +7,8 @@ import { FileText, FileSpreadsheet, Trash2, Loader2, AlertCircle, CheckCircle, C
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ProcessingProgress, type ProcessingStage } from './ProcessingProgress'
+import { ProcessingErrorHelp } from './ProcessingErrorHelp'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +30,13 @@ interface DocumentCardProps {
   document: Document
   onDelete: (documentId: string) => Promise<void>
   onView?: (document: Document) => void
+  onRetry?: (document: Document) => void
+  /** Callback for manual data entry action from error help */
+  onManualEntry?: () => void
+  /** Processing stage for multi-step indicator (optional, for active processing) */
+  processingStage?: ProcessingStage
+  /** Elapsed seconds for processing progress (optional, for active uploads) */
+  elapsedSeconds?: number
   className?: string
 }
 
@@ -79,10 +88,17 @@ export function DocumentCard({
   document,
   onDelete,
   onView,
+  onRetry,
+  onManualEntry,
+  processingStage,
+  elapsedSeconds,
   className
 }: DocumentCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const isProcessing = document.processingStatus === 'processing'
+  // Determine stage: use provided stage or default to 'processing' for documents in processing status
+  const effectiveStage: ProcessingStage = processingStage || (isProcessing ? 'processing' : 'idle')
 
   const statusConfig = STATUS_CONFIG[document.processingStatus]
   const StatusIcon = statusConfig.icon
@@ -145,6 +161,17 @@ export function DocumentCard({
               </Badge>
             </div>
 
+            {/* Processing progress indicator - multi-step view */}
+            {isProcessing && effectiveStage !== 'idle' && effectiveStage !== 'complete' && (
+              <div className="mt-3">
+                <ProcessingProgress
+                  stage={effectiveStage}
+                  elapsedSeconds={elapsedSeconds}
+                  compact
+                />
+              </div>
+            )}
+
             {/* Document type and metadata */}
             {document.processingStatus === 'completed' && (
               <div className="mt-2 flex items-center gap-2 text-small text-muted-foreground">
@@ -167,11 +194,16 @@ export function DocumentCard({
               </div>
             )}
 
-            {/* Error message */}
-            {document.processingStatus === 'error' && document.errorMessage && (
-              <p className="mt-2 text-small text-destructive">
-                {document.errorMessage}
-              </p>
+            {/* Error help with contextual suggestions */}
+            {document.processingStatus === 'error' && (
+              <div className="mt-3">
+                <ProcessingErrorHelp
+                  errorMessage={document.errorMessage}
+                  onRetry={onRetry ? () => onRetry(document) : undefined}
+                  onManualEntry={onManualEntry}
+                  className="border-0 shadow-none p-0"
+                />
+              </div>
             )}
 
             {/* Actions */}

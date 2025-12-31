@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useTransition, useMemo } from 'react'
 
-import { Loader2 } from 'lucide-react'
+// Loader2 removed - now using ProcessingProgress component instead
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -13,10 +13,14 @@ import { CSVPreview } from './CSVPreview'
 import { CSVMappingDialog } from './CSVMappingDialog'
 import { PDFExtractionPreview } from './PDFExtractionPreview'
 import { DocumentDataModal } from './DocumentDataModal'
+import { ProcessingProgress } from './ProcessingProgress'
 import { uploadDocument, processCSV, processPDF, deleteDocument, confirmCSVImport } from '@/actions/documents'
+import { useDocumentStatus } from '@/hooks/use-document-status'
+import { useProcessingProgress } from '@/hooks/use-processing-progress'
 
 import type { Document, ParsedCSVData, CSVType } from '@/types/documents'
 import type { PDFProcessingResult } from '@/lib/documents/pdf-processor'
+import type { DocumentStatusChange } from '@/hooks/use-document-status'
 
 export type FileTypeFilter = 'all' | 'csv' | 'pdf'
 
@@ -38,11 +42,97 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
   // PDF processing state
   const [pdfResult, setPdfResult] = useState<PDFProcessingResult | null>(null)
   const [isSavingPDF, setIsSavingPDF] = useState(false)
-  const [isProcessingPDF, setIsProcessingPDF] = useState(false)
 
   // View data modal state
   const [viewDocument, setViewDocument] = useState<Document | null>(null)
   const [showViewModal, setShowViewModal] = useState(false)
+
+  // Processing progress tracking
+  const progress = useProcessingProgress()
+
+  // Handle document retry - defined first so it can be used in handleStatusChange
+  const handleRetry = useCallback(async (document: Document) => {
+    progress.startProcessing(document.id, document.fileSize)
+    progress.setStage(document.id, 'processing')
+
+    try {
+      if (document.fileType === 'pdf') {
+        const { data: result, error } = await processPDF(document.id)
+        if (error || !result) {
+          progress.fail(document.id, error || 'Failed to process PDF')
+          toast.error(error || 'Failed to reprocess PDF')
+          return
+        }
+        setPdfResult(result)
+        setCurrentDocument(document)
+        progress.complete(document.id)
+      } else {
+        const { data: parsed, error } = await processCSV(document.id)
+        if (error || !parsed) {
+          progress.fail(document.id, error || 'Failed to process CSV')
+          toast.error(error || 'Failed to reprocess CSV')
+          return
+        }
+        setParsedData(parsed)
+        setCurrentDocument(document)
+        progress.complete(document.id)
+      }
+    } catch {
+      progress.fail(document.id, 'Retry failed')
+    }
+  }, [progress])
+
+  // Handle realtime status changes from Supabase
+  const handleStatusChange = useCallback((change: DocumentStatusChange) => {
+    console.log('[DocumentsClient]', {
+      action: 'realtimeStatusChange',
+      documentId: change.documentId,
+      newStatus: change.newStatus,
+    })
+
+    // Update document in local state
+    setDocuments((prev) =>
+      prev.map((d) =>
+        d.id === change.documentId ? change.document : d
+      )
+    )
+
+    // Show notifications based on status change
+    if (change.newStatus === 'completed') {
+      toast.success(`Document "${change.document.filename}" processed successfully`, {
+        action: {
+          label: 'View',
+          onClick: () => {
+            setViewDocument(change.document)
+            setShowViewModal(true)
+          },
+        },
+      })
+      progress.complete(change.documentId)
+    } else if (change.newStatus === 'error') {
+      toast.error(
+        change.document.errorMessage || `Failed to process "${change.document.filename}"`,
+        {
+          action: {
+            label: 'Retry',
+            onClick: () => handleRetry(change.document),
+          },
+        }
+      )
+      progress.fail(change.documentId, change.document.errorMessage || 'Processing failed')
+    } else if (change.newStatus === 'processing') {
+      progress.setStage(change.documentId, 'processing')
+    }
+  }, [progress, handleRetry])
+
+  // Subscribe to realtime document status changes
+  useDocumentStatus({
+    onStatusChange: handleStatusChange,
+    onError: (error) => {
+      console.error('[DocumentsClient]', { action: 'realtimeError', error })
+      // Don't show toast for realtime errors - fallback to manual refresh
+    },
+  })
 
   // Filtered documents based on file type filter
   const filteredDocuments = useMemo(() => {
@@ -57,38 +147,15 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
     pdf: documents.filter((d) => d.fileType === 'pdf').length,
   }), [documents])
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    // Create FormData for upload
-    const formData = new FormData()
-    formData.append('file', file)
-
-    // Upload file
-    const { data: document, error: uploadError } = await uploadDocument(formData)
-
-    if (uploadError || !document) {
-      toast.error(uploadError || 'Failed to upload file')
-      throw new Error(uploadError || 'Upload failed')
-    }
-
-    // Add to documents list
-    setDocuments((prev) => [document, ...prev])
-    setCurrentDocument(document)
-
-    // Determine file type and process accordingly
-    const isPDF = file.name.toLowerCase().endsWith('.pdf')
+  // Process document after upload (runs asynchronously)
+  const processDocument = useCallback(async (document: Document, isPDF: boolean) => {
+    progress.setStage(document.id, 'processing')
 
     if (isPDF) {
-      // Process PDF with Vision API
-      setIsProcessingPDF(true)
-      toast.info('Processing PDF... Complex documents may take 2-3 minutes.', {
-        duration: 10000,
-        id: 'pdf-processing',
-      })
       const { data: result, error: processError } = await processPDF(document.id)
-      setIsProcessingPDF(false)
-      toast.dismiss('pdf-processing')
 
       if (processError || !result) {
+        progress.fail(document.id, processError || 'Failed to process PDF')
         toast.error(processError || 'Failed to process PDF')
         setDocuments((prev) =>
           prev.map((d) =>
@@ -97,31 +164,26 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
               : d
           )
         )
-        throw new Error(processError || 'Processing failed')
+        return
       }
 
-      // Show PDF preview
+      progress.setStage(document.id, 'extracting')
       setPdfResult(result)
-
-      // Update document in list with processed status
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === document.id
-            ? {
-                ...d,
-                processingStatus: 'completed',
-                extractedData: result.extractedData
-              }
+            ? { ...d, processingStatus: 'completed', extractedData: result.extractedData }
             : d
         )
       )
 
+      progress.complete(document.id)
       toast.success(`PDF processed successfully (${result.schemaUsed === 'pl' ? 'P&L' : result.schemaUsed === 'payroll' ? 'Payroll' : 'Document'} detected)`)
     } else {
-      // Process CSV
       const { data: parsed, error: processError } = await processCSV(document.id)
 
       if (processError || !parsed) {
+        progress.fail(document.id, processError || 'Failed to process CSV')
         toast.error(processError || 'Failed to process CSV')
         setDocuments((prev) =>
           prev.map((d) =>
@@ -130,29 +192,65 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
               : d
           )
         )
-        throw new Error(processError || 'Processing failed')
+        return
       }
 
-      // Show preview
+      progress.setStage(document.id, 'extracting')
       setParsedData(parsed)
-
-      // Update document in list with processed status
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === document.id
-            ? {
-                ...d,
-                processingStatus: 'completed',
-                csvType: parsed.detectedType,
-                rowCount: parsed.totalRows
-              }
+            ? { ...d, processingStatus: 'completed', csvType: parsed.detectedType, rowCount: parsed.totalRows }
             : d
         )
       )
 
+      progress.complete(document.id)
       toast.success('CSV processed successfully')
     }
-  }, [])
+  }, [progress])
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    // Generate temporary ID for upload tracking (will switch to real ID after upload)
+    const tempId = `upload-${Date.now()}`
+
+    // Start progress tracking with file size
+    progress.startProcessing(tempId, file.size)
+
+    // Create FormData for upload
+    const formData = new FormData()
+    formData.append('file', file)
+
+    // Simulate upload progress
+    progress.setUploadProgress(tempId, 30)
+
+    // Upload file
+    const { data: document, error: uploadError } = await uploadDocument(formData)
+
+    progress.setUploadProgress(tempId, 100)
+
+    if (uploadError || !document) {
+      progress.fail(tempId, uploadError || 'Failed to upload file')
+      toast.error(uploadError || 'Failed to upload file')
+      throw new Error(uploadError || 'Upload failed')
+    }
+
+    // Clean up temp progress and start tracking with real document ID
+    progress.reset(tempId)
+    progress.startProcessing(document.id, file.size)
+
+    // Add to documents list with processing status
+    setDocuments((prev) => [document, ...prev])
+    setCurrentDocument(document)
+
+    // Determine file type
+    const isPDF = file.name.toLowerCase().endsWith('.pdf')
+
+    // Fire off processing asynchronously (don't await - allows dropzone to reset)
+    processDocument(document, isPDF)
+
+    // Return immediately so dropzone can accept another file
+  }, [progress, processDocument])
 
   const handlePreviewConfirm = useCallback(() => {
     if (!parsedData || parsedData.detectedType === 'unknown') {
@@ -266,27 +364,33 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
           onFileSelect={handleFileSelect}
           accept=".csv,.pdf"
           maxSizeMB={10}
-          disabled={isPending || isProcessingPDF || !!pdfResult || !!parsedData}
+          disabled={isPending || !!pdfResult || !!parsedData}
         />
       </section>
 
-      {/* PDF Processing Indicator */}
-      {isProcessingPDF && (
-        <section>
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-8">
-              <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
-              <h3 className="text-body font-medium text-foreground mb-1">
-                Extracting financial data...
-              </h3>
-              <p className="text-small text-muted-foreground text-center max-w-md">
-                Analyzing your document with AI. Complex documents with multiple tables
-                and pages may take 2-3 minutes. You&apos;ll see a preview when complete.
-              </p>
-            </CardContent>
-          </Card>
-        </section>
-      )}
+      {/* Processing Progress Indicator - only show during upload stage (before document is created) */}
+      {(() => {
+        // Find any document in uploading stage (temp IDs start with 'upload-')
+        const uploadingEntry = Array.from(progress.progressMap.entries()).find(
+          ([id, state]) => id.startsWith('upload-') && state.stage === 'uploading'
+        )
+        if (!uploadingEntry) return null
+        const [, uploadState] = uploadingEntry
+        return (
+          <section>
+            <Card>
+              <CardContent className="py-6">
+                <ProcessingProgress
+                  stage={uploadState.stage}
+                  uploadProgress={uploadState.uploadProgress}
+                  elapsedSeconds={uploadState.elapsedSeconds}
+                  errorMessage={uploadState.error || undefined}
+                />
+              </CardContent>
+            </Card>
+          </section>
+        )
+      })()}
 
       {/* PDF Preview (after upload) */}
       {pdfResult && (
@@ -366,6 +470,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
           documents={filteredDocuments}
           onDelete={handleDelete}
           onView={handleView}
+          onRetry={handleRetry}
+          progressMap={progress.progressMap}
           fileTypeFilter={fileTypeFilter}
         />
       </section>

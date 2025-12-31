@@ -104,7 +104,7 @@ vi.mock('@/lib/documents/csv-importer', () => ({
 
 // Mock PDF processor
 vi.mock('@/lib/documents/pdf-processor', () => ({
-  processPDFWithFallback: vi.fn(() => ({
+  processPDFWithAutoFallback: vi.fn(() => ({
     success: true,
     extractedData: {
       documentType: 'pl',
@@ -114,7 +114,13 @@ vi.mock('@/lib/documents/pdf-processor', () => ({
     },
     processingTimeMs: 2500,
     schemaUsed: 'pl'
-  }))
+  })),
+  PDFProcessingTimeoutError: class PDFProcessingTimeoutError extends Error {
+    constructor(timeoutMs: number) {
+      super(`PDF processing timed out after ${timeoutMs / 1000} seconds`)
+      this.name = 'PDFProcessingTimeoutError'
+    }
+  }
 }))
 
 // Import after mocking

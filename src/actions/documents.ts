@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parseCSVString } from '@/lib/documents/csv-parser'
 import { detectCSVType } from '@/lib/documents/csv-type-detector'
 import { importCSVData } from '@/lib/documents/csv-importer'
-import { processPDFWithFallback } from '@/lib/documents/pdf-processor'
+import { processPDFWithAutoFallback, PDFProcessingTimeoutError } from '@/lib/documents/pdf-processor'
 
 import type { ActionResponse } from '@/types'
 import type { Json } from '@/types/database'
@@ -268,8 +268,8 @@ export async function processPDF(
     const arrayBuffer = await fileData.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Process PDF with Vision API
-    const result = await processPDFWithFallback({
+    // Process PDF with Vision API, auto-fallback to text extraction on timeout
+    const result = await processPDFWithAutoFallback({
       file: buffer,
       filename: doc.filename
     })
@@ -294,10 +294,13 @@ export async function processPDF(
 
     return { data: result, error: null }
   } catch (e) {
+    const isTimeout = e instanceof PDFProcessingTimeoutError
     const errorMessage = e instanceof Error ? e.message : 'Unknown error'
+
     console.error('[DocumentsService]', {
       action: 'processPDF',
-      error: errorMessage
+      error: errorMessage,
+      isTimeout
     })
 
     // Try to update document with error status
@@ -305,10 +308,22 @@ export async function processPDF(
       const supabase = await createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        await updateDocumentError(supabase, documentId, user.id, errorMessage)
+        // Store specific error type for UI to handle
+        const storedError = isTimeout
+          ? 'TIMEOUT: Document too complex for Vision API processing'
+          : errorMessage
+        await updateDocumentError(supabase, documentId, user.id, storedError)
       }
     } catch {
       // Ignore cleanup errors
+    }
+
+    // Return user-friendly error message based on error type
+    if (isTimeout) {
+      return {
+        data: null,
+        error: 'This document is too complex for automatic processing. Try uploading a CSV export instead, or contact support for assistance with complex documents.'
+      }
     }
 
     return { data: null, error: 'Failed to process PDF' }
