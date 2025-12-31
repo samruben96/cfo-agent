@@ -12,6 +12,7 @@ import { DocumentList } from './DocumentList'
 import { CSVPreview } from './CSVPreview'
 import { CSVMappingDialog } from './CSVMappingDialog'
 import { PDFExtractionPreview } from './PDFExtractionPreview'
+import { DocumentDataModal } from './DocumentDataModal'
 import { uploadDocument, processCSV, processPDF, deleteDocument, confirmCSVImport } from '@/actions/documents'
 
 import type { Document, ParsedCSVData, CSVType } from '@/types/documents'
@@ -38,6 +39,10 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
   const [pdfResult, setPdfResult] = useState<PDFProcessingResult | null>(null)
   const [isSavingPDF, setIsSavingPDF] = useState(false)
   const [isProcessingPDF, setIsProcessingPDF] = useState(false)
+
+  // View data modal state
+  const [viewDocument, setViewDocument] = useState<Document | null>(null)
+  const [showViewModal, setShowViewModal] = useState(false)
 
   // Filtered documents based on file type filter
   const filteredDocuments = useMemo(() => {
@@ -174,11 +179,11 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
 
   const handleMappingConfirm = useCallback(
     async (mappings: Record<string, string>) => {
-      if (!currentDocument) return
+      if (!currentDocument || !parsedData) return
 
       setIsImporting(true)
       try {
-        const { error } = await confirmCSVImport(currentDocument.id, mappings)
+        const { error } = await confirmCSVImport(currentDocument.id, mappings, parsedData.detectedType)
 
         if (error) {
           toast.error(error)
@@ -202,7 +207,7 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
         setIsImporting(false)
       }
     },
-    [currentDocument]
+    [currentDocument, parsedData]
   )
 
   const handleMappingCancel = useCallback(() => {
@@ -248,8 +253,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
   }, [])
 
   const handleView = useCallback((document: Document) => {
-    // For now, just show a toast. In future, could open a full data view dialog
-    toast.info(`Viewing ${document.filename} - ${document.rowCount || 0} rows`)
+    setViewDocument(document)
+    setShowViewModal(true)
   }, [])
 
   return (
@@ -319,6 +324,13 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
           isLoading={isImporting}
         />
       )}
+
+      {/* View Data Modal */}
+      <DocumentDataModal
+        document={viewDocument}
+        open={showViewModal}
+        onOpenChange={setShowViewModal}
+      />
 
       {/* Documents List */}
       <section>

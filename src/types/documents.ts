@@ -117,6 +117,7 @@ export const PL_TARGET_FIELDS = [
   'expense_amount',
   'date',
   'description',
+  'transaction_type',
   'ignore'
 ] as const
 

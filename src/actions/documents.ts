@@ -320,7 +320,8 @@ export async function processPDF(
  */
 export async function confirmCSVImport(
   documentId: string,
-  mappings: Record<string, string>
+  mappings: Record<string, string>,
+  csvType?: CSVType
 ): Promise<ActionResponse<Document>> {
   try {
     const supabase = await createClient()
@@ -363,18 +364,20 @@ export async function confirmCSVImport(
     }
 
     // Import data to target tables
-    const csvType = doc.csv_type as CSVType
+    // Use passed csvType if provided (from user selection), otherwise fall back to detected type
+    const finalCsvType = csvType || (doc.csv_type as CSVType) || 'unknown'
     const importResult = await importCSVData({
       userId: user.id,
-      csvType,
+      csvType: finalCsvType,
       mappings,
       data: parseResult.data
     })
 
-    // Update document with confirmed mappings and import result
+    // Update document with confirmed mappings, correct type, and import result
     const { data, error } = await supabase
       .from('documents')
       .update({
+        csv_type: finalCsvType,
         column_mappings: mappings,
         processing_status: importResult.success ? 'completed' : 'error',
         error_message: importResult.success ? null : importResult.errors.join('; ')
@@ -395,7 +398,7 @@ export async function confirmCSVImport(
     console.log('[DocumentsService]', {
       action: 'confirmCSVImport',
       documentId,
-      csvType,
+      csvType: finalCsvType,
       rowsImported: importResult.rowsImported,
       rowsSkipped: importResult.rowsSkipped
     })
@@ -531,6 +534,116 @@ export async function deleteDocument(
       documentId
     })
     return { data: null, error: 'Failed to delete document' }
+  }
+}
+
+/**
+ * Get document data for viewing.
+ * Re-parses the document from storage to get all rows.
+ */
+export async function getDocumentData(
+  documentId: string
+): Promise<ActionResponse<{ headers: string[]; rows: Record<string, unknown>[]; totalRows: number }>> {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return { data: null, error: 'Not authenticated' }
+    }
+
+    // Get document record
+    const { data: doc, error: docError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (docError || !doc) {
+      return { data: null, error: 'Document not found' }
+    }
+
+    // Handle PDF documents - return extracted data
+    if (doc.file_type === 'pdf') {
+      const extractedData = doc.extracted_data as Record<string, unknown> | null
+      if (!extractedData) {
+        return { data: null, error: 'No extracted data available' }
+      }
+
+      // Convert PDF extracted data to table format
+      // PDFs typically have line_items array
+      const lineItems = (extractedData.line_items || extractedData.lineItems || []) as Record<string, unknown>[]
+      if (lineItems.length === 0) {
+        // Try to show summary data
+        const summaryKeys = Object.keys(extractedData).filter(k => k !== 'documentType')
+        return {
+          data: {
+            headers: ['Field', 'Value'],
+            rows: summaryKeys.map(key => ({ Field: key, Value: JSON.stringify(extractedData[key]) })),
+            totalRows: summaryKeys.length
+          },
+          error: null
+        }
+      }
+
+      const headers = Object.keys(lineItems[0] || {})
+      return {
+        data: {
+          headers,
+          rows: lineItems,
+          totalRows: lineItems.length
+        },
+        error: null
+      }
+    }
+
+    // Handle CSV documents - re-parse from storage
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from('documents')
+      .download(doc.storage_path)
+
+    if (downloadError || !fileData) {
+      return { data: null, error: 'Failed to download file' }
+    }
+
+    const csvString = await fileData.text()
+    const parseResult = parseCSVString(csvString)
+
+    if (parseResult.error) {
+      return { data: null, error: parseResult.error }
+    }
+
+    // Limit to first 500 rows for performance
+    const maxRows = 500
+    const rows = parseResult.data.slice(0, maxRows)
+
+    console.log('[DocumentsService]', {
+      action: 'getDocumentData',
+      documentId,
+      rowsReturned: rows.length,
+      totalRows: parseResult.data.length
+    })
+
+    return {
+      data: {
+        headers: parseResult.headers,
+        rows,
+        totalRows: parseResult.data.length
+      },
+      error: null
+    }
+  } catch (e) {
+    console.error('[DocumentsService]', {
+      action: 'getDocumentData',
+      error: e instanceof Error ? e.message : 'Unknown error',
+      documentId
+    })
+    return { data: null, error: 'Failed to load document data' }
   }
 }
 
