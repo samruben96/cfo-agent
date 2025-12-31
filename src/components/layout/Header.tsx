@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Database, PanelRightClose, Settings } from "lucide-react";
+import { Database, FileText, PanelRightClose, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,7 @@ export function Header({
   const pathname = usePathname();
 
   const isDataRoute = pathname?.startsWith("/data");
+  const isDocumentsRoute = pathname === "/documents";
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -73,6 +74,22 @@ export function Header({
 
         {/* Navigation and Icon Buttons */}
         <div className="flex items-center gap-xs">
+          {/* Documents Link */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "gap-1.5",
+              isDocumentsRoute && "bg-accent text-accent-foreground"
+            )}
+            asChild
+          >
+            <Link href="/documents">
+              <FileText className="h-4 w-4" />
+              Documents
+            </Link>
+          </Button>
+
           {/* Data Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

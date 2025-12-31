@@ -70,6 +70,63 @@ export type Database = {
         }
         Relationships: []
       }
+      documents: {
+        Row: {
+          column_mappings: Json | null
+          created_at: string
+          csv_type: string | null
+          error_message: string | null
+          extracted_data: Json | null
+          file_size: number
+          file_type: string
+          filename: string
+          id: string
+          mime_type: string
+          processed_at: string | null
+          processing_status: string
+          row_count: number | null
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          column_mappings?: Json | null
+          created_at?: string
+          csv_type?: string | null
+          error_message?: string | null
+          extracted_data?: Json | null
+          file_size: number
+          file_type: string
+          filename: string
+          id?: string
+          mime_type: string
+          processed_at?: string | null
+          processing_status?: string
+          row_count?: number | null
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          column_mappings?: Json | null
+          created_at?: string
+          csv_type?: string | null
+          error_message?: string | null
+          extracted_data?: Json | null
+          file_size?: number
+          file_type?: string
+          filename?: string
+          id?: string
+          mime_type?: string
+          processed_at?: string | null
+          processing_status?: string
+          row_count?: number | null
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       employees: {
         Row: {
           annual_benefits: number | null

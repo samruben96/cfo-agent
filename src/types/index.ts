@@ -11,6 +11,9 @@ export * from "./overhead-costs";
 // Re-export employees types
 export * from "./employees";
 
+// Re-export documents types
+export * from "./documents";
+
 // Re-export navigation types
 export * from "./navigation";
 
