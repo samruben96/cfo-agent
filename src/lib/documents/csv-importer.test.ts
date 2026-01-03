@@ -145,18 +145,60 @@ describe('importCSVData', () => {
   })
 
   describe('P&L import', () => {
-    it('returns not implemented message for P&L', async () => {
+    it('imports P&L data successfully', async () => {
       const options = {
         userId: 'user-123',
         csvType: 'pl' as const,
-        mappings: {},
-        data: [{ 'Revenue': 10000 }]
+        mappings: {
+          'Description': 'description',
+          'Amount': 'expense_amount',
+          'Category': 'expense_category'
+        },
+        data: [
+          { 'Description': 'Office Rent', 'Amount': 5000, 'Category': 'Rent' },
+          { 'Description': 'Software Licenses', 'Amount': 1200, 'Category': 'Software' }
+        ]
+      }
+
+      const result = await importCSVData(options)
+
+      expect(result.success).toBe(true)
+      expect(result.rowsImported).toBe(2)
+      expect(result.rowsSkipped).toBe(0)
+      // Note: P&L data is processed in memory and stored in extracted_data JSONB field
+      // (via confirmCSVImport), not inserted directly into a database table
+    })
+
+    it('skips rows with missing description or category', async () => {
+      const options = {
+        userId: 'user-123',
+        csvType: 'pl' as const,
+        mappings: {
+          'Amount': 'expense_amount'
+        },
+        data: [{ 'Amount': 10000 }]
       }
 
       const result = await importCSVData(options)
 
       expect(result.success).toBe(false)
-      expect(result.errors[0]).toContain('not yet supported')
+      expect(result.errors[0]).toContain('Missing description or category')
+    })
+
+    it('skips rows with missing amount', async () => {
+      const options = {
+        userId: 'user-123',
+        csvType: 'pl' as const,
+        mappings: {
+          'Description': 'description'
+        },
+        data: [{ 'Description': 'Office Rent' }]
+      }
+
+      const result = await importCSVData(options)
+
+      expect(result.success).toBe(false)
+      expect(result.errors[0]).toContain('Missing amount')
     })
   })
 
