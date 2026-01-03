@@ -7,7 +7,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { FileText, Clock, DollarSign, TrendingUp, TrendingDown, Users } from 'lucide-react'
 
 import type { PDFProcessingResult } from '@/lib/documents/pdf-processor'
-import type { PLExtraction, PayrollExtraction } from '@/lib/documents/extraction-schemas'
+import type { PLExtraction, PayrollExtraction, ExpenseExtraction } from '@/lib/documents/extraction-schemas'
 
 interface PDFExtractionPreviewProps {
   result: PDFProcessingResult
@@ -37,6 +37,8 @@ export function PDFExtractionPreview({
         return 'Profit & Loss'
       case 'payroll':
         return 'Payroll Report'
+      case 'expense':
+        return 'Expense Report'
       default:
         return 'Document'
     }
@@ -64,6 +66,9 @@ export function PDFExtractionPreview({
         )}
         {schemaUsed === 'payroll' && (
           <PayrollExtractionSummary data={extractedData as PayrollExtraction} />
+        )}
+        {schemaUsed === 'expense' && (
+          <ExpenseExtractionSummary data={extractedData as ExpenseExtraction} />
         )}
         {schemaUsed === 'generic' && (
           <GenericExtractionSummary data={extractedData} />
@@ -276,6 +281,87 @@ function PayrollExtractionSummary({ data }: { data: PayrollExtraction }) {
             {data.employees.length > 5 && (
               <p className="text-small text-muted-foreground">
                 +{data.employees.length - 5} more employees
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Metadata */}
+      {data.metadata?.companyName && (
+        <p className="text-small text-muted-foreground mt-4">
+          Company: {data.metadata.companyName}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Expense report extraction summary display.
+ */
+function ExpenseExtractionSummary({ data }: { data: ExpenseExtraction }) {
+  const formatCurrency = (value: number | undefined) => {
+    if (value === undefined) return 'N/A'
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value)
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Period info */}
+      {data.period?.month && (
+        <p className="text-small text-muted-foreground">
+          Period: {data.period.month}
+        </p>
+      )}
+
+      {/* Total expenses highlight */}
+      <div className="p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-900">
+        <div className="flex items-center gap-2 mb-1">
+          <DollarSign className="h-4 w-4 text-orange-600" />
+          <span className="text-small font-medium text-orange-700 dark:text-orange-400">Total Expenses</span>
+        </div>
+        <p className="text-h3 font-bold text-orange-700 dark:text-orange-400">
+          {formatCurrency(data.summary?.totalExpenses)}
+        </p>
+      </div>
+
+      {/* Category breakdown */}
+      {data.summary?.categories && data.summary.categories.length > 0 && (
+        <div>
+          <h4 className="text-small font-medium mb-2">Expense Categories ({data.summary.categories.length})</h4>
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {data.summary.categories.map((category, index) => (
+              <div key={index} className="flex justify-between text-small py-1 border-b border-muted/30 last:border-0">
+                <span className="text-muted-foreground">{category.category}</span>
+                <span className="font-medium">{formatCurrency(category.currentPeriod)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Line items preview */}
+      {data.lineItems && data.lineItems.length > 0 && (
+        <div>
+          <h4 className="text-small font-medium mb-2">Recent Transactions ({data.lineItems.length})</h4>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {data.lineItems.slice(0, 5).map((item, index) => (
+              <div key={index} className="flex justify-between text-small py-1">
+                <span className="text-muted-foreground truncate max-w-[60%]">
+                  {item.vendor || item.description}
+                </span>
+                <span>{formatCurrency(item.amount)}</span>
+              </div>
+            ))}
+            {data.lineItems.length > 5 && (
+              <p className="text-small text-muted-foreground">
+                +{data.lineItems.length - 5} more transactions
               </p>
             )}
           </div>

@@ -9,59 +9,57 @@ import userEvent from '@testing-library/user-event'
 import { ProcessingProgress } from './ProcessingProgress'
 
 describe('ProcessingProgress', () => {
-  it('renders all stage labels', () => {
-    render(<ProcessingProgress stage="uploading" />)
-
-    expect(screen.getByText('Upload')).toBeInTheDocument()
-    expect(screen.getByText('Process')).toBeInTheDocument()
-    expect(screen.getByText('Extract')).toBeInTheDocument()
-    expect(screen.getByText('Done')).toBeInTheDocument()
+  describe('idle stage', () => {
+    it('renders nothing when idle', () => {
+      const { container } = render(<ProcessingProgress stage="idle" />)
+      expect(container.firstChild).toBeNull()
+    })
   })
 
   describe('uploading stage', () => {
-    it('shows upload progress bar during uploading', () => {
-      render(<ProcessingProgress stage="uploading" uploadProgress={50} />)
-
-      expect(screen.getByText('Uploading... 50%')).toBeInTheDocument()
-      // Progress bar should be present
-      const progressBar = screen.getByRole('progressbar')
-      expect(progressBar).toBeInTheDocument()
+    it('shows uploading message', () => {
+      render(<ProcessingProgress stage="uploading" />)
+      expect(screen.getByText('Uploading...')).toBeInTheDocument()
     })
 
-    it('shows 0% by default when no uploadProgress provided', () => {
-      render(<ProcessingProgress stage="uploading" />)
-
-      expect(screen.getByText('Uploading... 0%')).toBeInTheDocument()
+    it('shows upload progress percentage when provided', () => {
+      render(<ProcessingProgress stage="uploading" uploadProgress={50} />)
+      expect(screen.getByText('Uploading... 50%')).toBeInTheDocument()
     })
   })
 
   describe('processing stage', () => {
-    it('shows elapsed time during processing', () => {
-      render(<ProcessingProgress stage="processing" elapsedSeconds={45} />)
-
-      expect(screen.getByText('Processing... 0:45')).toBeInTheDocument()
+    it('shows analyzing message', () => {
+      render(<ProcessingProgress stage="processing" />)
+      expect(screen.getByText('Analyzing document...')).toBeInTheDocument()
     })
 
-    it('shows hint message for long processing times', () => {
-      render(<ProcessingProgress stage="processing" elapsedSeconds={90} />)
+    it('shows elapsed time when > 3 seconds', () => {
+      render(<ProcessingProgress stage="processing" elapsedSeconds={10} />)
+      expect(screen.getByText('10s elapsed')).toBeInTheDocument()
+    })
 
-      expect(screen.getByText('Processing... 1:30')).toBeInTheDocument()
-      expect(screen.getByText('Complex documents may take a few minutes')).toBeInTheDocument()
+    it('does not show elapsed time when <= 3 seconds', () => {
+      render(<ProcessingProgress stage="processing" elapsedSeconds={3} />)
+      expect(screen.queryByText(/elapsed/)).not.toBeInTheDocument()
     })
   })
 
   describe('extracting stage', () => {
-    it('shows elapsed time during extracting', () => {
-      render(<ProcessingProgress stage="extracting" elapsedSeconds={30} />)
+    it('shows extracting message', () => {
+      render(<ProcessingProgress stage="extracting" />)
+      expect(screen.getByText('Extracting data...')).toBeInTheDocument()
+    })
 
-      expect(screen.getByText('Extracting... 0:30')).toBeInTheDocument()
+    it('shows elapsed time when > 3 seconds', () => {
+      render(<ProcessingProgress stage="extracting" elapsedSeconds={15} />)
+      expect(screen.getByText('15s elapsed')).toBeInTheDocument()
     })
   })
 
   describe('complete stage', () => {
     it('shows completion message', () => {
       render(<ProcessingProgress stage="complete" />)
-
       expect(screen.getByText('Complete')).toBeInTheDocument()
     })
   })
@@ -69,26 +67,22 @@ describe('ProcessingProgress', () => {
   describe('error stage', () => {
     it('shows default error message when none provided', () => {
       render(<ProcessingProgress stage="error" />)
-
       expect(screen.getByText('Processing failed')).toBeInTheDocument()
     })
 
     it('shows custom error message', () => {
       render(<ProcessingProgress stage="error" errorMessage="File format not supported" />)
-
       expect(screen.getByText('File format not supported')).toBeInTheDocument()
     })
 
     it('shows retry button when onRetry is provided', () => {
       const onRetry = vi.fn()
       render(<ProcessingProgress stage="error" onRetry={onRetry} />)
-
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
     })
 
     it('does not show retry button when onRetry is not provided', () => {
       render(<ProcessingProgress stage="error" />)
-
       expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     })
 
@@ -103,76 +97,48 @@ describe('ProcessingProgress', () => {
     })
   })
 
-  describe('progress indicators', () => {
-    it('marks previous stages as complete when on later stage', () => {
-      const { container } = render(<ProcessingProgress stage="extracting" />)
-
-      // Upload and Process stages should have the green/complete styling
-      // This is a visual test - we check for specific classes
-      const stageIcons = container.querySelectorAll('.rounded-full')
-      expect(stageIcons.length).toBe(4)
-    })
-
+  describe('styling', () => {
     it('applies custom className', () => {
       const { container } = render(
         <ProcessingProgress stage="complete" className="custom-class" />
       )
-
       expect(container.firstChild).toHaveClass('custom-class')
     })
-  })
 
-  describe('elapsed time formatting', () => {
-    it('formats seconds correctly', () => {
-      render(<ProcessingProgress stage="processing" elapsedSeconds={5} />)
-      expect(screen.getByText('Processing... 0:05')).toBeInTheDocument()
-    })
-
-    it('formats minutes and seconds correctly', () => {
-      render(<ProcessingProgress stage="processing" elapsedSeconds={125} />)
-      expect(screen.getByText('Processing... 2:05')).toBeInTheDocument()
-    })
-  })
-
-  describe('compact mode', () => {
-    it('applies compact spacing classes', () => {
-      const { container } = render(<ProcessingProgress stage="uploading" compact />)
-
-      // Compact mode uses space-y-2 instead of space-y-4
-      expect(container.firstChild).toHaveClass('space-y-2')
-    })
-
-    it('uses smaller icons in compact mode', () => {
+    it('applies compact spacing in compact mode', () => {
       const { container } = render(<ProcessingProgress stage="processing" compact />)
-
-      // Compact icons are w-7 h-7 instead of w-10 h-10
-      const iconContainers = container.querySelectorAll('.rounded-full')
-      iconContainers.forEach((icon) => {
-        expect(icon).toHaveClass('w-7', 'h-7')
-      })
+      expect(container.firstChild).toHaveClass('py-2')
     })
 
-    it('uses smaller text in compact mode', () => {
-      render(<ProcessingProgress stage="uploading" uploadProgress={50} compact />)
+    it('applies normal spacing by default', () => {
+      const { container } = render(<ProcessingProgress stage="processing" />)
+      expect(container.firstChild).toHaveClass('py-4')
+    })
+  })
 
-      // Compact text is text-[10px] for labels
-      const uploadText = screen.getByText('Uploading... 50%')
-      expect(uploadText).toHaveClass('text-[10px]')
+  describe('pulsing dots', () => {
+    it('shows pulsing dots during uploading', () => {
+      const { container } = render(<ProcessingProgress stage="uploading" />)
+      const dots = container.querySelectorAll('.animate-pulse')
+      expect(dots.length).toBe(3)
     })
 
-    it('does not show hint message in compact mode for long processing', () => {
-      render(<ProcessingProgress stage="processing" elapsedSeconds={90} compact />)
-
-      // Hint message should not appear in compact mode
-      expect(screen.queryByText('Complex documents may take a few minutes')).not.toBeInTheDocument()
+    it('shows pulsing dots during processing', () => {
+      const { container } = render(<ProcessingProgress stage="processing" />)
+      const dots = container.querySelectorAll('.animate-pulse')
+      expect(dots.length).toBe(3)
     })
 
-    it('uses smaller progress bar in compact mode', () => {
-      const { container } = render(<ProcessingProgress stage="uploading" uploadProgress={50} compact />)
+    it('does not show pulsing dots when complete', () => {
+      const { container } = render(<ProcessingProgress stage="complete" />)
+      const dots = container.querySelectorAll('.animate-pulse')
+      expect(dots.length).toBe(0)
+    })
 
-      // Compact progress bar uses h-1.5 class
-      const progressBar = container.querySelector('[role="progressbar"]')
-      expect(progressBar).toHaveClass('h-1.5')
+    it('does not show pulsing dots on error', () => {
+      const { container } = render(<ProcessingProgress stage="error" />)
+      const dots = container.querySelectorAll('.animate-pulse')
+      expect(dots.length).toBe(0)
     })
   })
 })

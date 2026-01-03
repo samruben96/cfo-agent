@@ -178,7 +178,11 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       )
 
       progress.complete(document.id)
-      toast.success(`PDF processed successfully (${result.schemaUsed === 'pl' ? 'P&L' : result.schemaUsed === 'payroll' ? 'Payroll' : 'Document'} detected)`)
+      const schemaLabel = result.schemaUsed === 'pl' ? 'P&L'
+        : result.schemaUsed === 'payroll' ? 'Payroll'
+        : result.schemaUsed === 'expense' ? 'Expense Report'
+        : 'Document'
+      toast.success(`${schemaLabel} extracted successfully`)
     } else {
       const { data: parsed, error: processError } = await processCSV(document.id)
 
@@ -355,66 +359,73 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
     setShowViewModal(true)
   }, [])
 
+  // Check if there's an active processing state
+  const activeProcessing = (() => {
+    // Find any document being processed (not complete, not error)
+    for (const [id, state] of progress.progressMap.entries()) {
+      if (state.stage === 'uploading' || state.stage === 'processing' || state.stage === 'extracting') {
+        return { id, state }
+      }
+    }
+    return null
+  })()
+
+  // Determine what to show in the upload section
+  const showDropzone = !activeProcessing && !pdfResult && !parsedData
+  const showProcessing = activeProcessing && !pdfResult && !parsedData
+
   return (
     <div className="space-y-lg">
-      {/* Upload Section */}
+      {/* Upload Section - shows dropzone, processing, or result */}
       <section>
-        <h2 className="text-h3 text-foreground mb-md">Upload New Document</h2>
-        <DocumentDropZone
-          onFileSelect={handleFileSelect}
-          accept=".csv,.pdf"
-          maxSizeMB={10}
-          disabled={isPending || !!pdfResult || !!parsedData}
-        />
-      </section>
+        <h2 className="text-h3 text-foreground mb-md">
+          {pdfResult || parsedData ? 'Review Extracted Data' : 'Upload New Document'}
+        </h2>
 
-      {/* Processing Progress Indicator - only show during upload stage (before document is created) */}
-      {(() => {
-        // Find any document in uploading stage (temp IDs start with 'upload-')
-        const uploadingEntry = Array.from(progress.progressMap.entries()).find(
-          ([id, state]) => id.startsWith('upload-') && state.stage === 'uploading'
-        )
-        if (!uploadingEntry) return null
-        const [, uploadState] = uploadingEntry
-        return (
-          <section>
-            <Card>
-              <CardContent className="py-6">
-                <ProcessingProgress
-                  stage={uploadState.stage}
-                  uploadProgress={uploadState.uploadProgress}
-                  elapsedSeconds={uploadState.elapsedSeconds}
-                  errorMessage={uploadState.error || undefined}
-                />
-              </CardContent>
-            </Card>
-          </section>
-        )
-      })()}
+        {/* Show dropzone when idle */}
+        {showDropzone && (
+          <DocumentDropZone
+            onFileSelect={handleFileSelect}
+            accept=".csv,.pdf"
+            maxSizeMB={10}
+            disabled={isPending}
+          />
+        )}
 
-      {/* PDF Preview (after upload) */}
-      {pdfResult && (
-        <section>
+        {/* Show processing indicator when uploading/processing */}
+        {showProcessing && (
+          <Card>
+            <CardContent className="py-8">
+              <ProcessingProgress
+                stage={activeProcessing.state.stage}
+                uploadProgress={activeProcessing.state.uploadProgress}
+                elapsedSeconds={activeProcessing.state.elapsedSeconds}
+                errorMessage={activeProcessing.state.error || undefined}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* PDF Preview (after processing complete) */}
+        {pdfResult && (
           <PDFExtractionPreview
             result={pdfResult}
             onConfirm={handlePDFConfirm}
             onCancel={handlePDFCancel}
             isLoading={isSavingPDF}
           />
-        </section>
-      )}
+        )}
 
-      {/* CSV Preview (after upload) */}
-      {parsedData && !showMappingDialog && (
-        <section>
+        {/* CSV Preview (after processing complete) */}
+        {parsedData && !showMappingDialog && (
           <CSVPreview
             data={parsedData}
             onConfirm={handlePreviewConfirm}
             onCancel={handlePreviewCancel}
             onChangeType={handleTypeChange}
           />
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Column Mapping Dialog */}
       {parsedData && currentDocument && (
