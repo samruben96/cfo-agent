@@ -8,6 +8,7 @@
 export type {
   PLExtraction,
   PayrollExtraction,
+  ExpenseExtraction,
   GenericExtraction
 } from '@/lib/documents/extraction-schemas'
 
@@ -21,7 +22,7 @@ export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'error'
 export type CSVType = 'pl' | 'payroll' | 'employees' | 'unknown'
 
 // PDF document schema types detected during extraction
-export type PDFSchemaType = 'pl' | 'payroll' | 'generic'
+export type PDFSchemaType = 'pl' | 'payroll' | 'expense' | 'generic'
 
 // PDF document type strings returned from extraction
 export type PDFDocumentType =
@@ -31,6 +32,9 @@ export type PDFDocumentType =
   | 'payroll'
   | 'payroll_summary'
   | 'payroll_report'
+  | 'expense_report'
+  | 'operating_expenses'
+  | 'monthly_expenses'
   | 'unknown'
 
 /**
@@ -179,6 +183,9 @@ export function getPDFSchemaType(extractedData: Record<string, unknown> | undefi
   if (docType === 'payroll' || docType === 'payroll_summary' || docType === 'payroll_report') {
     return 'payroll'
   }
+  if (docType === 'expense_report' || docType === 'operating_expenses' || docType === 'monthly_expenses') {
+    return 'expense'
+  }
   return 'generic'
 }
 
@@ -191,6 +198,8 @@ export function getPDFSchemaLabel(schemaType: PDFSchemaType | null): string | nu
       return 'P&L Statement'
     case 'payroll':
       return 'Payroll Report'
+    case 'expense':
+      return 'Expense Report'
     case 'generic':
       return 'Document'
     default:

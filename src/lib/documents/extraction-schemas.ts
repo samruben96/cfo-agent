@@ -94,6 +94,53 @@ export const payrollExtractionSchema = z.object({
 })
 
 /**
+ * Expense line item schema for individual transactions.
+ */
+const expenseLineItemSchema = z.object({
+  date: z.string().describe('Transaction date (YYYY-MM-DD), empty string if unknown'),
+  vendor: z.string().describe('Vendor or payee name'),
+  description: z.string().describe('Description of the expense'),
+  category: z.string().describe('Expense category (e.g., "Rent", "Technology", "Travel")'),
+  amount: z.number().describe('Expense amount (positive number)'),
+  paymentMethod: z.string().describe('Payment method (e.g., "ACH", "CC", "Check"), empty string if unknown'),
+})
+
+/**
+ * Expense category summary schema.
+ */
+const expenseCategorySummarySchema = z.object({
+  category: z.string().describe('Category name'),
+  currentPeriod: z.number().describe('Amount for current period'),
+  priorPeriod: z.number().describe('Amount for prior period, 0 if unknown'),
+  yearToDate: z.number().describe('Year-to-date amount, 0 if unknown'),
+  budget: z.number().describe('Budget amount, 0 if unknown'),
+  variance: z.number().describe('Variance from budget (positive = over budget), 0 if unknown'),
+})
+
+/**
+ * Expense report extraction schema.
+ * Used for operating expense reports, monthly expense reports, and cost reports.
+ */
+export const expenseExtractionSchema = z.object({
+  documentType: z.enum(['expense_report', 'operating_expenses', 'monthly_expenses']).describe('Type of expense document'),
+  period: z.object({
+    month: z.string().describe('Report month (e.g., "December 2024"), empty string if unknown'),
+    startDate: z.string().describe('Period start date (YYYY-MM-DD), empty string if unknown'),
+    endDate: z.string().describe('Period end date (YYYY-MM-DD), empty string if unknown'),
+  }).describe('Reporting period'),
+  summary: z.object({
+    totalExpenses: z.number().describe('Total expenses for the period'),
+    categories: z.array(expenseCategorySummarySchema).describe('Expense summary by category, empty array if none'),
+  }).describe('Expense summary section'),
+  lineItems: z.array(expenseLineItemSchema).describe('Individual expense transactions, empty array if none'),
+  metadata: z.object({
+    companyName: z.string().describe('Company name, empty string if not visible'),
+    preparedBy: z.string().describe('Preparer name, empty string if not visible'),
+    pageCount: z.number().describe('Number of pages in the document, 1 if unknown'),
+  }).describe('Document metadata'),
+})
+
+/**
  * Generic extraction schema for unknown document types.
  * Falls back to raw content extraction.
  * Note: All fields required for OpenAI structured outputs compatibility.
@@ -111,15 +158,18 @@ export const genericExtractionSchema = z.object({
 /**
  * Combined extraction result schema.
  * Used to determine which type of extraction was performed.
+ * Note: discriminatedUnion requires unique documentType values across all schemas.
  */
 export const extractionResultSchema = z.discriminatedUnion('documentType', [
   plExtractionSchema,
   payrollExtractionSchema,
+  expenseExtractionSchema,
   genericExtractionSchema,
 ])
 
 // Export types derived from schemas
 export type PLExtraction = z.infer<typeof plExtractionSchema>
 export type PayrollExtraction = z.infer<typeof payrollExtractionSchema>
+export type ExpenseExtraction = z.infer<typeof expenseExtractionSchema>
 export type GenericExtraction = z.infer<typeof genericExtractionSchema>
 export type ExtractionResult = z.infer<typeof extractionResultSchema>

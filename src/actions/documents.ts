@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parseCSVString } from '@/lib/documents/csv-parser'
 import { detectCSVType } from '@/lib/documents/csv-type-detector'
 import { importCSVData } from '@/lib/documents/csv-importer'
-import { processPDFWithAutoFallback, PDFProcessingTimeoutError } from '@/lib/documents/pdf-processor'
+import { processPDFOptimized, PDFProcessingTimeoutError } from '@/lib/documents/pdf-processor'
 
 import type { ActionResponse } from '@/types'
 import type { Json } from '@/types/database'
@@ -268,8 +268,8 @@ export async function processPDF(
     const arrayBuffer = await fileData.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Process PDF with Vision API, auto-fallback to text extraction on timeout
-    const result = await processPDFWithAutoFallback({
+    // Process PDF with optimized flow: text extraction first for small files
+    const result = await processPDFOptimized({
       file: buffer,
       filename: doc.filename
     })

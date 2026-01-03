@@ -104,7 +104,7 @@ vi.mock('@/lib/documents/csv-importer', () => ({
 
 // Mock PDF processor
 vi.mock('@/lib/documents/pdf-processor', () => ({
-  processPDFWithAutoFallback: vi.fn(() => ({
+  processPDFOptimized: vi.fn(() => ({
     success: true,
     extractedData: {
       documentType: 'pl',

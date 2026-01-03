@@ -13,12 +13,14 @@ import { openai } from '@/lib/ai/openai'
 import {
   plExtractionSchema,
   payrollExtractionSchema,
+  expenseExtractionSchema,
   genericExtractionSchema,
 } from './extraction-schemas'
 
 import type {
   PLExtraction,
   PayrollExtraction,
+  ExpenseExtraction,
   GenericExtraction,
 } from './extraction-schemas'
 
@@ -31,7 +33,7 @@ export interface ProcessPDFOptions {
   /** Optional filename for document type detection */
   filename?: string
   /** Force a specific extraction schema */
-  forceSchema?: 'pl' | 'payroll' | 'generic'
+  forceSchema?: 'pl' | 'payroll' | 'expense' | 'generic'
 }
 
 /**
@@ -39,16 +41,16 @@ export interface ProcessPDFOptions {
  */
 export interface PDFProcessingResult {
   success: boolean
-  extractedData: PLExtraction | PayrollExtraction | GenericExtraction
+  extractedData: PLExtraction | PayrollExtraction | GenericExtraction | ExpenseExtraction
   processingTimeMs: number
-  schemaUsed: 'pl' | 'payroll' | 'generic'
+  schemaUsed: 'pl' | 'payroll' | 'expense' | 'generic'
 }
 
 /**
  * Detect document type from filename.
  * Returns the most likely schema to use based on filename patterns.
  */
-export function detectDocumentType(filename: string): 'pl' | 'payroll' | 'generic' {
+export function detectDocumentType(filename: string): 'pl' | 'payroll' | 'expense' | 'generic' {
   const lower = filename.toLowerCase()
 
   // P&L detection patterns
@@ -76,13 +78,25 @@ export function detectDocumentType(filename: string): 'pl' | 'payroll' | 'generi
     return 'payroll'
   }
 
+  // Expense report detection patterns
+  if (
+    lower.includes('expense') ||
+    lower.includes('spending') ||
+    lower.includes('operating') ||
+    lower.includes('monthly') ||
+    lower.includes('cost_report') ||
+    lower.includes('cost-report')
+  ) {
+    return 'expense'
+  }
+
   return 'generic'
 }
 
 /**
  * Get the extraction prompt based on document type.
  */
-function getExtractionPrompt(schemaType: 'pl' | 'payroll' | 'generic'): string {
+function getExtractionPrompt(schemaType: 'pl' | 'payroll' | 'expense' | 'generic'): string {
   const basePrompt = `You are a financial document extraction expert. Analyze this PDF document and extract structured data.
 
 IMPORTANT INSTRUCTIONS:
@@ -118,6 +132,18 @@ Focus on extracting:
 - Employee count
 
 Set documentType to 'payroll', 'payroll_summary', or 'payroll_report' based on the document.`
+
+    case 'expense':
+      return basePrompt + `This appears to be an Expense Report or Operating Expense document.
+
+Focus on extracting:
+- Expense category summaries with amounts (current period, prior period, YTD, budget, variance)
+- Individual expense line items with date, vendor, description, category, amount, payment method
+- Total expenses for the period
+- Reporting period/month
+- Company name if visible
+
+Set documentType to 'expense_report', 'operating_expenses', or 'monthly_expenses' based on the document title.`
 
     case 'generic':
     default:
@@ -188,7 +214,9 @@ export async function processPDF(options: ProcessPDFOptions): Promise<PDFProcess
     ? plExtractionSchema
     : schemaType === 'payroll'
       ? payrollExtractionSchema
-      : genericExtractionSchema
+      : schemaType === 'expense'
+        ? expenseExtractionSchema
+        : genericExtractionSchema
 
   // Convert file to base64
   const base64File = toBase64(options.file)
@@ -242,7 +270,7 @@ export async function processPDF(options: ProcessPDFOptions): Promise<PDFProcess
 
     return {
       success: true,
-      extractedData: extractedData as PLExtraction | PayrollExtraction | GenericExtraction,
+      extractedData: extractedData as PLExtraction | PayrollExtraction | ExpenseExtraction | GenericExtraction,
       processingTimeMs,
       schemaUsed: schemaType,
     }
@@ -308,7 +336,7 @@ export async function processPDFWithFallback(options: ProcessPDFOptions): Promis
  * Get the text extraction prompt based on document type.
  * Similar to vision prompt but optimized for pre-extracted text.
  */
-function getTextExtractionPrompt(schemaType: 'pl' | 'payroll' | 'generic', extractedText: string): string {
+function getTextExtractionPrompt(schemaType: 'pl' | 'payroll' | 'expense' | 'generic', extractedText: string): string {
   const basePrompt = `You are a financial document extraction expert. Analyze the following extracted text from a PDF document and extract structured data.
 
 IMPORTANT INSTRUCTIONS:
@@ -348,6 +376,18 @@ Focus on extracting:
 - Employee count
 
 Set documentType to 'payroll', 'payroll_summary', or 'payroll_report' based on the document.`
+
+    case 'expense':
+      return basePrompt + `This appears to be an Expense Report or Operating Expense document.
+
+Focus on extracting:
+- Expense category summaries with amounts (current period, prior period, YTD, budget, variance)
+- Individual expense line items with date, vendor, description, category, amount, payment method
+- Total expenses for the period
+- Reporting period/month
+- Company name if visible
+
+Set documentType to 'expense_report', 'operating_expenses', or 'monthly_expenses' based on the document.`
 
     case 'generic':
     default:
@@ -402,7 +442,9 @@ export async function processPDFWithTextExtraction(options: ProcessPDFOptions): 
     ? plExtractionSchema
     : schemaType === 'payroll'
       ? payrollExtractionSchema
-      : genericExtractionSchema
+      : schemaType === 'expense'
+        ? expenseExtractionSchema
+        : genericExtractionSchema
 
   // Get extraction prompt with extracted text
   const prompt = getTextExtractionPrompt(schemaType, textResult.text)
@@ -432,7 +474,7 @@ export async function processPDFWithTextExtraction(options: ProcessPDFOptions): 
 
     return {
       success: true,
-      extractedData: extractedData as PLExtraction | PayrollExtraction | GenericExtraction,
+      extractedData: extractedData as PLExtraction | PayrollExtraction | ExpenseExtraction | GenericExtraction,
       processingTimeMs,
       schemaUsed: schemaType,
     }
@@ -454,8 +496,7 @@ export async function processPDFWithTextExtraction(options: ProcessPDFOptions): 
 
 /**
  * Process a PDF with automatic fallback to text extraction on timeout.
- * This is the recommended entry point for PDF processing as it handles
- * both simple and complex documents gracefully.
+ * DEPRECATED: Use processPDFOptimized instead for better performance.
  *
  * Flow:
  * 1. Try Vision API with 90-second timeout
@@ -464,6 +505,7 @@ export async function processPDFWithTextExtraction(options: ProcessPDFOptions): 
  *
  * @param options - Processing options
  * @returns Structured extraction result
+ * @deprecated Use processPDFOptimized for text-first processing
  */
 export async function processPDFWithAutoFallback(options: ProcessPDFOptions): Promise<PDFProcessingResult> {
   try {
@@ -497,4 +539,97 @@ export async function processPDFWithAutoFallback(options: ProcessPDFOptions): Pr
     // For non-timeout errors, rethrow
     throw error
   }
+}
+
+/** File size threshold for text-first processing (100KB) */
+const TEXT_FIRST_SIZE_THRESHOLD = 100_000
+
+/** Minimum extracted text length to consider text extraction successful */
+const MIN_EXTRACTED_TEXT_LENGTH = 100
+
+/**
+ * Determine if text extraction should be tried first based on file size.
+ * Small files (< 100KB) typically process faster with text extraction.
+ *
+ * @param fileSize - File size in bytes
+ * @returns true if text extraction should be tried first
+ */
+export function shouldUseTextExtractionFirst(fileSize: number): boolean {
+  return fileSize < TEXT_FIRST_SIZE_THRESHOLD
+}
+
+/**
+ * Process a PDF with optimized flow - text extraction first for small files.
+ * This is the RECOMMENDED entry point for PDF processing.
+ *
+ * Flow:
+ * 1. For small files (< 100KB): Try text extraction first
+ *    - If text content is sufficient (> 100 chars), process with GPT-4o
+ *    - If text content is insufficient, fall back to Vision API
+ * 2. For large files: Use Vision API with timeout fallback to text extraction
+ *
+ * @param options - Processing options including file buffer
+ * @returns Structured extraction result
+ */
+export async function processPDFOptimized(options: ProcessPDFOptions): Promise<PDFProcessingResult> {
+  // Get file size
+  const fileSize = typeof options.file === 'string'
+    ? Buffer.from(options.file, 'base64').length
+    : options.file.length
+
+  const useTextFirst = shouldUseTextExtractionFirst(fileSize)
+
+  console.log('[PDFProcessor]', {
+    action: 'processPDFOptimized',
+    fileSize,
+    useTextFirst,
+    filename: options.filename,
+  })
+
+  if (useTextFirst) {
+    // Small file: Try text extraction first
+    try {
+      // Import dynamically to avoid circular dependencies
+      const { extractPDFText } = await import('./pdf-text-extractor')
+
+      const buffer = typeof options.file === 'string'
+        ? Buffer.from(options.file, 'base64')
+        : options.file
+
+      const textResult = await extractPDFText(buffer)
+
+      // Check if we got sufficient text content
+      if (textResult.success && textResult.text && textResult.text.length >= MIN_EXTRACTED_TEXT_LENGTH) {
+        console.log('[PDFProcessor]', {
+          action: 'processPDFOptimized',
+          message: 'Using text extraction (sufficient content)',
+          textLength: textResult.text.length,
+        })
+
+        // Process with text extraction path
+        return await processPDFWithTextExtraction(options)
+      }
+
+      // Insufficient text - might be scanned PDF, fall back to Vision
+      console.log('[PDFProcessor]', {
+        action: 'processPDFOptimized',
+        message: 'Text extraction insufficient, falling back to Vision API',
+        textLength: textResult.text?.length ?? 0,
+      })
+
+      return await processPDFWithFallback(options)
+    } catch (textError) {
+      // Text extraction failed, try Vision API
+      console.log('[PDFProcessor]', {
+        action: 'processPDFOptimized',
+        message: 'Text extraction failed, falling back to Vision API',
+        error: textError instanceof Error ? textError.message : 'Unknown error',
+      })
+
+      return await processPDFWithFallback(options)
+    }
+  }
+
+  // Large file: Use original Vision-first approach with timeout fallback
+  return await processPDFWithAutoFallback(options)
 }
