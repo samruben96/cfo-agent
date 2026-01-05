@@ -2,8 +2,14 @@
  * Configuration constants for prompt generation
  */
 export const PROMPT_CONFIG = {
-  /** Maximum characters of extracted data to include in prompt (prevents overflow) */
-  MAX_EXTRACTED_DATA_CHARS: 2000,
+  /**
+   * Maximum characters of extracted data to include in prompt
+   * Set to 32,000 chars (~8,000 tokens) to accommodate larger financial documents
+   * while leaving ample room for system prompt and conversation history.
+   * Note: Future RAG implementation (Epic 7) will enable cross-document search
+   * with intelligent chunking and retrieval.
+   */
+  MAX_EXTRACTED_DATA_CHARS: 32000,
 } as const
 
 export interface AgencyContext {
