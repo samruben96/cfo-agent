@@ -2,7 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs } from 'ai'
 
 import { openai } from '@/lib/ai/openai'
 import { createCFOSystemPrompt, type DocumentContext } from '@/lib/ai/prompts'
-import { createProfileTools } from '@/lib/ai/tools'
+import { createProfileTools, createEmployeeCostTools } from '@/lib/ai/tools'
 import {
   createConversation,
   saveMessage,
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     }
 
     // Fetch document contexts if documentIds provided (supports multi-select)
-    let documentContexts: DocumentContext[] = []
+    const documentContexts: DocumentContext[] = []
     if (documentIds && documentIds.length > 0) {
       const { data: docs } = await supabase
         .from('documents')
@@ -165,8 +165,10 @@ export async function POST(req: Request) {
     // Convert UI messages to model messages format for streamText
     const modelMessages = await convertToModelMessages(messages)
 
-    // Create profile tools for conversational data input
-    const tools = createProfileTools(supabase, user.id)
+    // Create tools for AI - profile updates and employee cost calculations
+    const profileTools = createProfileTools(supabase, user.id)
+    const employeeCostTools = createEmployeeCostTools()
+    const tools = { ...profileTools, ...employeeCostTools }
 
     // Stream response using AI SDK with GPT-5.2
     // stopWhen controls when to stop multi-step tool calls

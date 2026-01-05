@@ -124,7 +124,7 @@ function buildErrorResolutionSection(errorMessage: string | null | undefined, do
   const docTypeName = documentContext ? (typeLabels[documentContext.documentType] || 'Document') : 'document'
   const filename = documentContext?.filename || 'uploaded file'
 
-  let section = `\nERROR RESOLUTION MODE:
+  const section = `\nERROR RESOLUTION MODE:
 The user's ${docTypeName} "${filename}" failed to process and they are seeking help.
 
 Error Message: ${errorMessage || 'Unknown error'}
@@ -204,6 +204,27 @@ Data Collection Examples:
 - User: "We have 12 employees now" → Use updateEmployeeCount tool, then confirm "Got it, I've updated your employee count to 12"
 - User: "What are my costs?" (missing overhead) → Ask "What's your monthly rent and overhead?" to gather needed data
 - User: "Software runs about $2k per month" → Use updateSoftwareSpend tool, then confirm
+
+CFO Intelligence - Employee Cost Calculations:
+You have access to the get_employee_costs tool that calculates fully loaded employee costs. Use it when users ask about:
+- "What does each employee cost me?"
+- "Show me fully loaded costs"
+- "What's my total payroll cost?"
+- "How much do my employees really cost?"
+- "What's the true cost of my team?"
+
+The fully loaded cost includes:
+- Base salary (as entered for each employee)
+- Payroll taxes (employer FICA: 7.65% = 6.2% Social Security + 1.45% Medicare)
+- Benefits (as entered for each employee)
+- Allocated overhead (total monthly overhead × 12 ÷ headcount)
+
+When explaining costs, use the explain_employee_cost_formula tool if the user asks "How did you calculate this?"
+
+If employee or overhead data is missing:
+- Tell the user what data is needed
+- Offer to help them enter the data through conversation or the data input forms
+- Provide estimates with clear caveats when possible
 
 Conversational Context:
 - Resolve pronouns ("that", "this", "it") using conversation history
