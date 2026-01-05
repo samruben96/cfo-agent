@@ -3,18 +3,28 @@
 /**
  * Server Actions for financial calculations.
  * Story: 5-1-fully-loaded-employee-cost-calculation
+ * Story: 5-2-ebitda-calculation
  */
 
 import {
   calculateAllEmployeeCosts,
   calculateCostSummary,
+  calculateEBITDA,
+  aggregateRevenueFromSources,
+  aggregateExpensesFromSources,
 } from '@/lib/calculations'
-import type { EmployeeCostResult } from '@/lib/calculations'
+import type {
+  EmployeeCostResult,
+  EBITDAResult,
+  PLDocumentWithMetadata,
+} from '@/lib/calculations'
 import { createClient } from '@/lib/supabase/server'
 
 import type { ActionResponse } from '@/types'
 import type { Employee, EmployeeRow } from '@/types/employees'
 import type { OverheadCosts, OverheadCostsRow, SoftwareCost } from '@/types/overhead-costs'
+import type { PLExtraction } from '@/lib/documents/extraction-schemas'
+import type { DocumentRow } from '@/types/documents'
 
 /**
  * Transforms a database row to the application-level Employee model.
@@ -212,5 +222,177 @@ export async function getFullyLoadedEmployeeCosts(): Promise<
       error: e instanceof Error ? e.message : 'Unknown error',
     })
     return { data: null, error: 'Failed to calculate employee costs' }
+  }
+}
+
+/**
+ * Checks if extracted data is a P&L document type.
+ */
+function isPLDocument(extractedData: Record<string, unknown> | null): boolean {
+  if (!extractedData) return false
+  const docType = extractedData.documentType as string | undefined
+  return docType === 'pl' || docType === 'income_statement' || docType === 'profit_loss'
+}
+
+/**
+ * Fetches EBITDA calculation for the current user.
+ *
+ * Aggregates data from multiple sources:
+ * - P&L documents (highest priority for revenue and expenses)
+ * - Overhead costs (manual entry)
+ * - Employee costs (from Story 5.1 calculation)
+ * - Profile estimates (fallback for revenue)
+ *
+ * @returns ActionResponse containing EBITDAResult or error
+ */
+export async function getEBITDA(): Promise<ActionResponse<EBITDAResult>> {
+  try {
+    const supabase = await createClient()
+
+    // Verify authentication
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      console.error('[CalculationsService]', {
+        action: 'getEBITDA',
+        error: 'Not authenticated',
+      })
+      return { data: null, error: 'Not authenticated' }
+    }
+
+    const warnings: string[] = []
+
+    // Fetch P&L documents
+    const { data: documentRows } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('processing_status', 'completed')
+      .order('created_at', { ascending: false })
+
+    const plDocuments: PLDocumentWithMetadata[] = []
+    if (documentRows) {
+      for (const row of documentRows as DocumentRow[]) {
+        if (isPLDocument(row.extracted_data)) {
+          plDocuments.push({
+            documentId: row.id,
+            filename: row.filename,
+            lastUpdated: row.updated_at,
+            extraction: row.extracted_data as unknown as PLExtraction,
+          })
+        }
+      }
+    }
+
+    // Fetch profile for revenue estimate fallback
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('annual_revenue_range, monthly_overhead_estimate')
+      .eq('id', user.id)
+      .single()
+
+    // Fetch overhead costs
+    const { data: overheadRow } = await supabase
+      .from('overhead_costs')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
+    let overhead: OverheadCosts | null = null
+    if (overheadRow) {
+      overhead = transformRowToOverheadCosts(overheadRow as OverheadCostsRow)
+    }
+
+    // Get employee costs (uses existing calculation from Story 5.1)
+    const employeeCostsResult = await getFullyLoadedEmployeeCosts()
+    const employeeCostSummary = employeeCostsResult.data?.summary ?? null
+
+    // Aggregate revenue from sources
+    const revenueData = aggregateRevenueFromSources({
+      plDocuments,
+      profileRevenueRange: profile?.annual_revenue_range ?? null,
+    })
+
+    // Track data completeness
+    const hasRevenueData = revenueData !== null
+    const hasPayrollData = employeeCostSummary !== null
+    const hasOverheadData = overhead !== null
+    const hasPLData = plDocuments.length > 0
+
+    // Add warnings for missing data
+    if (!hasRevenueData) {
+      warnings.push(
+        'No revenue data found. Upload a P&L statement or complete your profile with revenue information.'
+      )
+    } else if (revenueData.source.type === 'profile_estimate') {
+      warnings.push(
+        'Using estimated revenue from your profile. Upload a P&L statement for more accurate results.'
+      )
+    }
+
+    if (!hasPLData && !hasOverheadData && !hasPayrollData) {
+      warnings.push(
+        'No expense data available. Upload a P&L statement or enter overhead costs and employees.'
+      )
+    }
+
+    // Handle case where we have no revenue data at all
+    if (!hasRevenueData) {
+      return {
+        data: null,
+        error: 'No revenue data found. Upload a P&L statement or complete your profile.',
+      }
+    }
+
+    // Aggregate expenses from sources
+    const expenseData = aggregateExpensesFromSources({
+      plDocuments,
+      overheadCosts: hasPLData ? null : overhead, // Don't double-count if P&L has expenses
+      employeeCostSummary: hasPLData ? null : employeeCostSummary, // Don't double-count payroll
+    })
+
+    // Calculate EBITDA
+    const breakdown = calculateEBITDA(revenueData, expenseData)
+
+    // Add warning for negative EBITDA
+    if (breakdown.ebitda < 0) {
+      warnings.push(
+        'Your EBITDA is negative, indicating an operating loss. Consider reviewing expenses or strategies to increase revenue.'
+      )
+    }
+
+    // Build result
+    const result: EBITDAResult = {
+      breakdown,
+      dataCompleteness: {
+        hasRevenueData,
+        hasExpenseData: expenseData.total > 0,
+        hasPayrollData,
+        hasOverheadData,
+      },
+      warnings,
+      lastUpdated: new Date().toISOString(),
+    }
+
+    console.log('[CalculationsService]', {
+      action: 'getEBITDA',
+      userId: user.id,
+      plDocCount: plDocuments.length,
+      hasOverhead: hasOverheadData,
+      hasPayroll: hasPayrollData,
+      ebitda: breakdown.ebitda,
+      margin: breakdown.ebitdaMargin,
+    })
+
+    return { data: result, error: null }
+  } catch (e) {
+    console.error('[CalculationsService]', {
+      action: 'getEBITDA',
+      error: e instanceof Error ? e.message : 'Unknown error',
+    })
+    return { data: null, error: 'Failed to calculate EBITDA' }
   }
 }

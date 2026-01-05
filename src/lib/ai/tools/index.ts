@@ -11,3 +11,7 @@ export type { ProfileToolResult, ProfileTools } from './profile-tools'
 export { createEmployeeCostTools } from './employee-cost-tools'
 
 export type { EmployeeCostToolResult, EmployeeCostTools } from './employee-cost-tools'
+
+export { createEBITDATools, formatEBITDAMessage, formatEBITDADetailedMessage } from './ebitda-tools'
+
+export type { EBITDAToolResult, EBITDATools } from './ebitda-tools'
