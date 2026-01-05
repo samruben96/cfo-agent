@@ -6,7 +6,6 @@
  */
 
 import { readFileSync } from 'fs'
-import { join } from 'path'
 
 // Dynamically import to use ESM modules
 async function main() {

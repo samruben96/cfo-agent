@@ -1,20 +1,27 @@
 import { streamText, convertToModelMessages, stepCountIs } from 'ai'
 
 import { openai } from '@/lib/ai/openai'
-import { createCFOSystemPrompt } from '@/lib/ai/prompts'
+import { createCFOSystemPrompt, type DocumentContext } from '@/lib/ai/prompts'
 import { createProfileTools } from '@/lib/ai/tools'
 import {
   createConversation,
   saveMessage,
   updateConversationTitle,
 } from '@/lib/conversations'
+import { generateSmartSummary } from '@/lib/documents/smart-summary'
 import { createClient } from '@/lib/supabase/server'
+import { getPDFSchemaType, transformRowToDocument } from '@/types/documents'
 
 import type { UIMessage } from 'ai'
+import type { DocumentRow } from '@/types/documents'
 
 interface ChatRequest {
   messages: UIMessage[]
   conversationId?: string
+  /** Document IDs for multi-select document reference */
+  documentIds?: string[]
+  /** Whether this is an error resolution session - AC #17, #18 */
+  isErrorResolution?: boolean
 }
 
 export async function POST(req: Request) {
@@ -40,7 +47,7 @@ export async function POST(req: Request) {
 
     // Parse request body
     const body = await req.json() as ChatRequest
-    const { messages, conversationId: requestConversationId } = body
+    const { messages, conversationId: requestConversationId, documentIds, isErrorResolution } = body
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
@@ -93,11 +100,66 @@ export async function POST(req: Request) {
       }
     }
 
-    // Create system prompt with agency context
+    // Fetch document contexts if documentIds provided (supports multi-select)
+    let documentContexts: DocumentContext[] = []
+    if (documentIds && documentIds.length > 0) {
+      const { data: docs } = await supabase
+        .from('documents')
+        .select('*')
+        .in('id', documentIds)
+        .eq('user_id', user.id)
+
+      if (docs) {
+        for (const doc of docs) {
+          // Transform database row to Document type
+          const document = transformRowToDocument(doc as DocumentRow)
+
+          // Generate smart summary
+          const summary = generateSmartSummary(document)
+
+          // Determine document type
+          let documentType = 'csv'
+          if (document.fileType === 'pdf') {
+            documentType = getPDFSchemaType(document.extractedData) || 'pdf'
+          } else if (document.csvType) {
+            documentType = document.csvType
+          }
+
+          documentContexts.push({
+            filename: document.filename,
+            fileType: document.fileType,
+            documentType,
+            extractedData: document.extractedData ?? null,
+            isProcessing: document.processingStatus === 'processing',
+            summary: {
+              title: summary.title,
+              metrics: summary.metrics,
+              itemCount: summary.itemCount,
+              dateRange: summary.dateRange,
+            },
+          })
+        }
+      }
+    }
+
+    // Get error message from first document if in error resolution mode
+    const errorMessage = isErrorResolution && documentIds && documentIds.length > 0
+      ? (await supabase
+          .from('documents')
+          .select('error_message')
+          .eq('id', documentIds[0])
+          .single()
+        ).data?.error_message
+      : null
+
+    // Create system prompt with agency and document context
     const systemPrompt = createCFOSystemPrompt({
       agencyName: profile?.agency_name ?? null,
       employeeCount: profile?.employee_count ?? null,
       revenueRange: profile?.annual_revenue_range ?? null,
+      documentContexts: documentContexts.length > 0 ? documentContexts : undefined,
+      isErrorResolution,
+      errorMessage,
     })
 
     // Convert UI messages to model messages format for streamText

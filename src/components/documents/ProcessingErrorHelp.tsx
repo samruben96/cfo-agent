@@ -18,6 +18,8 @@ interface ProcessingErrorHelpProps {
   onRetry?: () => void
   /** Callback for manual entry action */
   onManualEntry?: () => void
+  /** Callback for "Chat to resolve" action - AC #17, #18 */
+  onChatToResolve?: () => void
   /** Additional CSS class names */
   className?: string
 }
@@ -85,7 +87,7 @@ function getSuggestions(category: ErrorCategory): {
   title: string
   description: string
   icon: typeof AlertCircle
-  actions: Array<{ label: string; type: 'retry' | 'upload' | 'manual' | 'support' }>
+  actions: Array<{ label: string; type: 'retry' | 'upload' | 'manual' | 'support' | 'chat' }>
 } {
   switch (category) {
     case 'format':
@@ -94,6 +96,7 @@ function getSuggestions(category: ErrorCategory): {
         description: 'The file may be in an unsupported format or corrupted. Try exporting to a standard format.',
         icon: FileText,
         actions: [
+          { label: 'Chat to resolve', type: 'chat' },
           { label: 'Upload different file', type: 'upload' },
           { label: 'Enter data manually', type: 'manual' },
         ],
@@ -104,6 +107,7 @@ function getSuggestions(category: ErrorCategory): {
         description: 'This document has complex tables or formatting that couldn\'t be processed automatically. For best results, export your data as a CSV file from your accounting software and upload that instead.',
         icon: RefreshCw,
         actions: [
+          { label: 'Chat to resolve', type: 'chat' },
           { label: 'Upload CSV instead', type: 'upload' },
           { label: 'Enter data manually', type: 'manual' },
         ],
@@ -114,6 +118,7 @@ function getSuggestions(category: ErrorCategory): {
         description: 'The document structure was not recognized. You can enter the data manually.',
         icon: FileText,
         actions: [
+          { label: 'Chat to resolve', type: 'chat' },
           { label: 'Enter data manually', type: 'manual' },
           { label: 'Contact support', type: 'support' },
         ],
@@ -125,6 +130,7 @@ function getSuggestions(category: ErrorCategory): {
         icon: Wifi,
         actions: [
           { label: 'Retry', type: 'retry' },
+          { label: 'Chat to resolve', type: 'chat' },
         ],
       }
     default:
@@ -133,8 +139,8 @@ function getSuggestions(category: ErrorCategory): {
         description: 'Something went wrong. Please try again or contact support.',
         icon: HelpCircle,
         actions: [
+          { label: 'Chat to resolve', type: 'chat' },
           { label: 'Try again', type: 'retry' },
-          { label: 'Contact support', type: 'support' },
         ],
       }
   }
@@ -157,13 +163,14 @@ export function ProcessingErrorHelp({
   errorMessage,
   onRetry,
   onManualEntry,
+  onChatToResolve,
   className,
 }: ProcessingErrorHelpProps) {
   const category = categorizeError(errorMessage)
   const suggestions = getSuggestions(category)
   const Icon = suggestions.icon
 
-  const handleAction = (actionType: 'retry' | 'upload' | 'manual' | 'support') => {
+  const handleAction = (actionType: 'retry' | 'upload' | 'manual' | 'support' | 'chat') => {
     switch (actionType) {
       case 'retry':
       case 'upload':
@@ -171,6 +178,9 @@ export function ProcessingErrorHelp({
         break
       case 'manual':
         onManualEntry?.()
+        break
+      case 'chat':
+        onChatToResolve?.()
         break
       case 'support':
         // Open support link or contact modal

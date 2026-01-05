@@ -2,10 +2,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest",
+    "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest",
     "test:e2e": "playwright test",
     "db:types": "npx supabase gen types typescript --project-id pmtvlokatbkavujwcdij > src/types/database.ts"
   },

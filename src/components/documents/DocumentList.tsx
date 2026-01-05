@@ -13,7 +13,10 @@ interface DocumentListProps {
   documents: Document[]
   onDelete: (documentId: string) => Promise<void>
   onView?: (document: Document) => void
+  onDownload?: (document: Document) => Promise<void>
   onRetry?: (document: Document) => void
+  /** Callback for "Chat to resolve" error action - AC #17, #18 */
+  onChatToResolve?: (document: Document) => void
   /** Map of document IDs to their progress states */
   progressMap?: Map<string, DocumentProgressState>
   fileTypeFilter?: FileTypeFilter
@@ -47,7 +50,9 @@ export function DocumentList({
   documents,
   onDelete,
   onView,
+  onDownload,
   onRetry,
+  onChatToResolve,
   progressMap,
   fileTypeFilter = 'all',
   className
@@ -79,7 +84,9 @@ export function DocumentList({
             document={document}
             onDelete={onDelete}
             onView={onView}
+            onDownload={onDownload}
             onRetry={onRetry}
+            onChatToResolve={onChatToResolve}
             processingStage={docProgress?.stage}
             elapsedSeconds={docProgress?.elapsedSeconds}
           />

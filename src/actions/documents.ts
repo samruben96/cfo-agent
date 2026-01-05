@@ -484,6 +484,60 @@ export async function getDocuments(): Promise<ActionResponse<Document[]>> {
 }
 
 /**
+ * Fetch a single document by ID for the current user.
+ * Used by "Chat about this" feature - AC #15
+ */
+export async function getDocument(documentId: string): Promise<ActionResponse<Document>> {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      console.error('[DocumentsService]', {
+        action: 'getDocument',
+        error: 'Not authenticated'
+      })
+      return { data: null, error: 'Not authenticated' }
+    }
+
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (error) {
+      console.error('[DocumentsService]', {
+        action: 'getDocument',
+        error: error.message,
+        documentId
+      })
+      return { data: null, error: 'Document not found' }
+    }
+
+    const transformed = transformRowToDocument(data as DocumentRow)
+    console.log('[DocumentsService]', {
+      action: 'getDocument',
+      documentId,
+      userId: user.id
+    })
+    return { data: transformed, error: null }
+  } catch (e) {
+    console.error('[DocumentsService]', {
+      action: 'getDocument',
+      error: e instanceof Error ? e.message : 'Unknown error',
+      documentId
+    })
+    return { data: null, error: 'Failed to load document' }
+  }
+}
+
+/**
  * Delete a document and its associated storage file.
  */
 export async function deleteDocument(
@@ -659,6 +713,60 @@ export async function getDocumentData(
       documentId
     })
     return { data: null, error: 'Failed to load document data' }
+  }
+}
+
+/**
+ * Get a signed download URL for a document's original file.
+ * URL expires after 60 seconds.
+ */
+export async function getDocumentDownloadUrl(
+  documentId: string
+): Promise<ActionResponse<string>> {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return { data: null, error: 'Not authenticated' }
+    }
+
+    // Get document to verify ownership and get storage path
+    const { data: doc, error: docError } = await supabase
+      .from('documents')
+      .select('storage_path')
+      .eq('id', documentId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (docError || !doc) {
+      return { data: null, error: 'Document not found' }
+    }
+
+    // Create signed URL (expires in 60 seconds)
+    const { data, error } = await supabase.storage
+      .from('documents')
+      .createSignedUrl(doc.storage_path, 60)
+
+    if (error || !data?.signedUrl) {
+      console.error('[DocumentsService]', {
+        action: 'getDocumentDownloadUrl',
+        error: error?.message || 'Failed to create signed URL'
+      })
+      return { data: null, error: 'Failed to generate download link' }
+    }
+
+    return { data: data.signedUrl, error: null }
+  } catch (e) {
+    console.error('[DocumentsService]', {
+      action: 'getDocumentDownloadUrl',
+      error: e instanceof Error ? e.message : 'Unknown error'
+    })
+    return { data: null, error: 'Failed to generate download link' }
   }
 }
 

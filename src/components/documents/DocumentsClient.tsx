@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useTransition, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 
 // Loader2 removed - now using ProcessingProgress component instead
 import { toast } from 'sonner'
@@ -14,9 +15,12 @@ import { CSVMappingDialog } from './CSVMappingDialog'
 import { PDFExtractionPreview } from './PDFExtractionPreview'
 import { DocumentDataModal } from './DocumentDataModal'
 import { ProcessingProgress } from './ProcessingProgress'
-import { uploadDocument, processCSV, processPDF, deleteDocument, confirmCSVImport } from '@/actions/documents'
+import { uploadDocument, processCSV, processPDF, deleteDocument, confirmCSVImport, getDocumentDownloadUrl } from '@/actions/documents'
 import { useDocumentStatus } from '@/hooks/use-document-status'
 import { useProcessingProgress } from '@/hooks/use-processing-progress'
+import { getToastError } from '@/lib/errors/friendly-errors'
+import { getCSVTypeLabel } from '@/lib/documents/csv-type-detector'
+import { autoMapColumns } from '@/lib/documents/csv-auto-mapper'
 
 import type { Document, ParsedCSVData, CSVType } from '@/types/documents'
 import type { PDFProcessingResult } from '@/lib/documents/pdf-processor'
@@ -29,6 +33,7 @@ interface DocumentsClientProps {
 }
 
 export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
+  const router = useRouter()
   const [documents, setDocuments] = useState<Document[]>(initialDocuments)
   const [isPending, startTransition] = useTransition()
   const [fileTypeFilter, setFileTypeFilter] = useState<FileTypeFilter>('all')
@@ -50,6 +55,15 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
   // Processing progress tracking
   const progress = useProcessingProgress()
 
+  /**
+   * Navigate to chat with error context - AC #17, #18
+   * Opens chat with AI ready to help resolve document processing error
+   */
+  const handleChatToResolve = useCallback((document: Document) => {
+    // Navigate to chat with document ID and error flag
+    router.push(`/chat?documentId=${document.id}&error=true`)
+  }, [router])
+
   // Handle document retry - defined first so it can be used in handleStatusChange
   const handleRetry = useCallback(async (document: Document) => {
     progress.startProcessing(document.id, document.fileSize)
@@ -60,7 +74,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
         const { data: result, error } = await processPDF(document.id)
         if (error || !result) {
           progress.fail(document.id, error || 'Failed to process PDF')
-          toast.error(error || 'Failed to reprocess PDF')
+          const friendlyError = getToastError(error || 'Processing failed', 'document_processing')
+          toast.error(friendlyError.title, { description: friendlyError.description })
           return
         }
         setPdfResult(result)
@@ -70,7 +85,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
         const { data: parsed, error } = await processCSV(document.id)
         if (error || !parsed) {
           progress.fail(document.id, error || 'Failed to process CSV')
-          toast.error(error || 'Failed to reprocess CSV')
+          const friendlyError = getToastError(error || 'Processing failed', 'csv_import')
+          toast.error(friendlyError.title, { description: friendlyError.description })
           return
         }
         setParsedData(parsed)
@@ -110,15 +126,17 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       })
       progress.complete(change.documentId)
     } else if (change.newStatus === 'error') {
-      toast.error(
+      const friendlyError = getToastError(
         change.document.errorMessage || `Failed to process "${change.document.filename}"`,
-        {
-          action: {
-            label: 'Retry',
-            onClick: () => handleRetry(change.document),
-          },
-        }
+        'document_processing'
       )
+      toast.error(friendlyError.title, {
+        description: friendlyError.description,
+        action: {
+          label: 'Retry',
+          onClick: () => handleRetry(change.document),
+        },
+      })
       progress.fail(change.documentId, change.document.errorMessage || 'Processing failed')
     } else if (change.newStatus === 'processing') {
       progress.setStage(change.documentId, 'processing')
@@ -156,7 +174,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
 
       if (processError || !result) {
         progress.fail(document.id, processError || 'Failed to process PDF')
-        toast.error(processError || 'Failed to process PDF')
+        const friendlyError = getToastError(processError || 'Failed to process PDF', 'document_processing')
+        toast.error(friendlyError.title, { description: friendlyError.description })
         setDocuments((prev) =>
           prev.map((d) =>
             d.id === document.id
@@ -168,7 +187,7 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       }
 
       progress.setStage(document.id, 'extracting')
-      setPdfResult(result)
+      // Update document with extracted data (no preview needed - smart summary shows in card)
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === document.id
@@ -182,13 +201,19 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
         : result.schemaUsed === 'payroll' ? 'Payroll'
         : result.schemaUsed === 'expense' ? 'Expense Report'
         : 'Document'
+
+      // Skip preview for happy path - show success toast
       toast.success(`${schemaLabel} extracted successfully`)
+
+      // Clear current document (no preview modal needed)
+      setCurrentDocument(null)
     } else {
       const { data: parsed, error: processError } = await processCSV(document.id)
 
       if (processError || !parsed) {
         progress.fail(document.id, processError || 'Failed to process CSV')
-        toast.error(processError || 'Failed to process CSV')
+        const friendlyError = getToastError(processError || 'Failed to process CSV', 'csv_import')
+        toast.error(friendlyError.title, { description: friendlyError.description })
         setDocuments((prev) =>
           prev.map((d) =>
             d.id === document.id
@@ -200,7 +225,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       }
 
       progress.setStage(document.id, 'extracting')
-      setParsedData(parsed)
+
+      // Update document with CSV info
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === document.id
@@ -210,7 +236,42 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       )
 
       progress.complete(document.id)
-      toast.success('CSV processed successfully')
+
+      // For high-confidence detections (>80%), auto-import without dialog - happy path!
+      // For unknown type or low confidence, show preview for user to select type
+      if (parsed.detectedType !== 'unknown' && parsed.confidence >= 0.8) {
+        // Auto-generate mappings using the auto-mapper
+        const autoMappingResult = autoMapColumns(parsed.headers, parsed.detectedType)
+
+        // Only auto-import if mapping is also confident
+        if (!autoMappingResult.shouldAutoApply) {
+          // Mapping not confident enough - show preview for user to fix
+          setParsedData(parsed)
+          setCurrentDocument(document)
+          toast.info('Please review column mappings')
+          return
+        }
+
+        const { error: importError } = await confirmCSVImport(document.id, autoMappingResult.mappings, parsed.detectedType)
+
+        if (importError) {
+          // If auto-import fails, fall back to manual flow
+          setParsedData(parsed)
+          setCurrentDocument(document)
+          const friendlyError = getToastError(importError, 'csv_import')
+          toast.error(friendlyError.title, { description: friendlyError.description })
+        } else {
+          // Success - show toast (no preview/dialog needed)
+          toast.success(`${getCSVTypeLabel(parsed.detectedType)} imported successfully`)
+          // Clear state - no preview needed
+          setCurrentDocument(null)
+        }
+      } else {
+        // Low confidence or unknown type - show preview for user to select/confirm
+        setParsedData(parsed)
+        setCurrentDocument(document)
+        toast.info('Please review and confirm the CSV type')
+      }
     }
   }, [progress])
 
@@ -235,7 +296,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
 
     if (uploadError || !document) {
       progress.fail(tempId, uploadError || 'Failed to upload file')
-      toast.error(uploadError || 'Failed to upload file')
+      const friendlyError = getToastError(uploadError || 'Failed to upload file', 'document_upload')
+      toast.error(friendlyError.title, { description: friendlyError.description })
       throw new Error(uploadError || 'Upload failed')
     }
 
@@ -288,7 +350,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
         const { error } = await confirmCSVImport(currentDocument.id, mappings, parsedData.detectedType)
 
         if (error) {
-          toast.error(error)
+          const friendlyError = getToastError(error, 'csv_import')
+          toast.error(friendlyError.title, { description: friendlyError.description })
           return
         }
 
@@ -345,7 +408,8 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
       const { error } = await deleteDocument(documentId)
 
       if (error) {
-        toast.error(error)
+        const friendlyError = getToastError(error, 'api_request')
+        toast.error(friendlyError.title, { description: friendlyError.description })
         return
       }
 
@@ -357,6 +421,31 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
   const handleView = useCallback((document: Document) => {
     setViewDocument(document)
     setShowViewModal(true)
+  }, [])
+
+  const handleDownload = useCallback(async (document: Document) => {
+    const { data: url, error } = await getDocumentDownloadUrl(document.id)
+    if (error || !url) {
+      const friendlyError = getToastError(error || 'Failed to download', 'api_request')
+      toast.error(friendlyError.title, { description: friendlyError.description })
+      return
+    }
+    // Fetch blob and trigger download (required for cross-origin URLs)
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = blobUrl
+      link.download = document.filename
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      const friendlyError = getToastError(err, 'api_request')
+      toast.error(friendlyError.title, { description: friendlyError.description })
+    }
   }, [])
 
   // Check if there's an active processing state
@@ -481,7 +570,9 @@ export function DocumentsClient({ initialDocuments }: DocumentsClientProps) {
           documents={filteredDocuments}
           onDelete={handleDelete}
           onView={handleView}
+          onDownload={handleDownload}
           onRetry={handleRetry}
+          onChatToResolve={handleChatToResolve}
           progressMap={progress.progressMap}
           fileTypeFilter={fileTypeFilter}
         />

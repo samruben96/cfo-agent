@@ -6,24 +6,34 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { toast } from 'sonner'
 
-import { History } from 'lucide-react'
+import { History, FileText } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { getToastError } from '@/lib/errors/friendly-errors'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChatContainer, ChatMessage, ChatInput, TypingIndicator, EmptyState, NewConversationButton, ConversationHistoryPanel } from '@/components/chat'
+import { ChatContainer, ChatMessage, ChatInput, TypingIndicator, EmptyState, NewConversationButton, ConversationHistoryPanel, DocumentAnnouncement, DocumentsSidePanel, type FileProcessingState, type SelectedDocumentInfo, type MessageDocumentRef } from '@/components/chat'
 import { useConversation } from '@/hooks/use-conversation'
 import { parseSuggestions } from '@/lib/ai/parse-suggestions'
+import { generateSmartSummary, generateSuggestedQuestions } from '@/lib/documents/smart-summary'
+import { uploadDocument, processCSV, processPDF, getDocuments } from '@/actions/documents'
 
 import type { UIMessage } from 'ai'
+import type { Document } from '@/types/documents'
 
 interface ChatClientProps {
   initialConversationId?: string
+  /** Document ID to start a "Chat about this" session - AC #15 */
+  initialDocumentId?: string
+  /** Whether this is an error resolution session - AC #17, #18 */
+  isErrorResolution?: boolean
   className?: string
   onConversationChange?: (conversationId: string | undefined) => void
 }
 
 export function ChatClient({
   initialConversationId,
+  initialDocumentId,
+  isErrorResolution = false,
   className,
   onConversationChange
 }: ChatClientProps) {
@@ -33,7 +43,21 @@ export function ChatClient({
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId)
   const [input, setInput] = useState('')
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [isDocsPanelOpen, setIsDocsPanelOpen] = useState(false)
   const lastInputRef = useRef('')
+
+  // Document context state for "Chat about this" flow - AC #15
+  const [contextDocument, setContextDocument] = useState<Document | null>(null)
+  const [documentLoading, setDocumentLoading] = useState(!!initialDocumentId)
+  const hasLoadedDocumentRef = useRef(false)
+
+  // File upload state - AC #1, #2
+  const [processingFile, setProcessingFile] = useState<FileProcessingState | null>(null)
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [uploadedDocument, setUploadedDocument] = useState<Document | null>(null)
+
+  // Multi-select documents for chat reference
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([])
 
   // Load conversation history when conversationId changes
   const { conversation, isLoading: isLoadingHistory } = useConversation(conversationId)
@@ -65,15 +89,55 @@ export function ChatClient({
     return response
   }, [conversationId, onConversationChange])
 
-  // Create transport with dynamic body to pass conversationId
+  // Combine single contextDocument (from URL param) with multi-selected documents
+  const allDocumentIds = useMemo(() => {
+    return contextDocument?.id
+      ? [contextDocument.id, ...selectedDocumentIds.filter(id => id !== contextDocument.id)]
+      : selectedDocumentIds
+  }, [contextDocument?.id, selectedDocumentIds])
+
+  // Use refs to avoid stale closure issues in the transport's fetch function
+  // This ensures the fetch always gets the latest values when called
+  const allDocumentIdsRef = useRef(allDocumentIds)
+  const conversationIdRef = useRef(conversationId)
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    allDocumentIdsRef.current = allDocumentIds
+  }, [allDocumentIds])
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId
+  }, [conversationId])
+
+  // Create custom transport that includes our extra body fields
+  // Using refs inside fetch to always get latest values (avoids stale closure)
   const transport = useMemo(() => {
     return new DefaultChatTransport({
-      fetch: customFetch,
-      body: () => ({
-        conversationId,
-      }),
+      api: '/api/chat',
+      fetch: async (input, init) => {
+        // Parse existing body and add our custom fields
+        let body: Record<string, unknown> = {}
+        if (init?.body) {
+          body = JSON.parse(init.body as string)
+        }
+
+        // Add our custom fields - use refs to get current values
+        const currentDocIds = allDocumentIdsRef.current
+        const currentConvId = conversationIdRef.current
+
+        body.conversationId = currentConvId
+        body.documentIds = currentDocIds.length > 0 ? currentDocIds : undefined
+        body.isErrorResolution = isErrorResolution
+
+        // Call our custom fetch (which handles response headers)
+        return customFetch(input, {
+          ...init,
+          body: JSON.stringify(body),
+        })
+      },
     })
-  }, [conversationId, customFetch])
+  }, [customFetch, isErrorResolution]) // Note: refs don't need to be in deps - they're always current
 
   const {
     messages,
@@ -84,16 +148,9 @@ export function ChatClient({
   } = useChat({
     transport,
     onError: (err) => {
-      // Differentiate error types for better user feedback
-      const errorMessage = err?.message?.toLowerCase() || ''
-
-      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-        toast.error('Too many requests. Please wait a moment and try again.')
-      } else if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
-        toast.error('Session expired. Please refresh the page.')
-      } else {
-        toast.error('Failed to send message. Please try again.')
-      }
+      // Use conversational error messages
+      const friendlyError = getToastError(err, 'chat')
+      toast.error(friendlyError.title, { description: friendlyError.description })
 
       console.error('[ChatClient]', { error: err?.message || 'Unknown error' })
       // Restore input on error
@@ -107,6 +164,126 @@ export function ChatClient({
       setMessages(initialMessages)
     }
   }, [initialMessages, setMessages])
+
+  // Load document for "Chat about this" flow - AC #15
+  useEffect(() => {
+    if (!initialDocumentId || hasLoadedDocumentRef.current) return
+
+    const loadDocument = async () => {
+      try {
+        const response = await fetch(`/api/documents/${initialDocumentId}`)
+        if (!response.ok) {
+          throw new Error('Failed to load document')
+        }
+        const document = await response.json()
+        setContextDocument(document)
+        hasLoadedDocumentRef.current = true
+      } catch (error) {
+        console.error('[ChatClient] Failed to load document:', error)
+        const friendlyError = getToastError(error, 'api_request')
+        toast.error(friendlyError.title, { description: friendlyError.description })
+      } finally {
+        setDocumentLoading(false)
+      }
+    }
+
+    loadDocument()
+  }, [initialDocumentId])
+
+  // Load documents for side panel - AC #12
+  useEffect(() => {
+    const loadDocuments = async () => {
+      const { data, error } = await getDocuments()
+      if (error) {
+        console.error('[ChatClient] Failed to load documents:', error)
+        return
+      }
+      if (data) {
+        setDocuments(data)
+      }
+    }
+
+    loadDocuments()
+  }, [])
+
+  // Handle file upload - AC #1, #2
+  const handleFileSelect = useCallback(async (file: File) => {
+    setProcessingFile({ file, status: 'uploading' })
+
+    try {
+      // Upload file
+      const formData = new FormData()
+      formData.append('file', file)
+      const uploadResult = await uploadDocument(formData)
+
+      if (uploadResult.error || !uploadResult.data) {
+        setProcessingFile({ file, status: 'error', error: uploadResult.error || 'Upload failed' })
+        return
+      }
+
+      const doc = uploadResult.data
+      setProcessingFile({ file, status: 'processing', documentId: doc.id })
+
+      // Process based on file type
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const processResult = await processPDF(doc.id)
+        if (processResult.error) {
+          setProcessingFile({ file, status: 'error', error: processResult.error })
+          return
+        }
+      } else {
+        const processResult = await processCSV(doc.id)
+        if (processResult.error) {
+          setProcessingFile({ file, status: 'error', error: processResult.error })
+          return
+        }
+      }
+
+      // Fetch updated document with extracted data
+      const response = await fetch(`/api/documents/${doc.id}`)
+      if (response.ok) {
+        const updatedDoc = await response.json()
+        setUploadedDocument(updatedDoc)
+        setDocuments(prev => [updatedDoc, ...prev.filter(d => d.id !== updatedDoc.id)])
+      }
+
+      setProcessingFile({ file, status: 'complete', documentId: doc.id })
+
+      // Clear processing state after a brief delay to show success
+      setTimeout(() => {
+        setProcessingFile(null)
+      }, 1500)
+    } catch (error) {
+      console.error('[ChatClient] File upload error:', error)
+      const friendlyError = getToastError(error, 'document_upload')
+      const errorMessage = friendlyError.description
+        ? `${friendlyError.title}: ${friendlyError.description}`
+        : friendlyError.title
+      setProcessingFile({ file, status: 'error', error: errorMessage })
+    }
+  }, [])
+
+  // Convert selected document IDs to display info for chat input
+  const selectedDocumentsInfo: SelectedDocumentInfo[] = useMemo(() => {
+    return selectedDocumentIds
+      .map(id => {
+        const doc = documents.find(d => d.id === id)
+        if (!doc || doc.processingStatus !== 'completed') return null
+        const summary = generateSmartSummary(doc)
+        return {
+          id: doc.id,
+          filename: doc.filename,
+          title: summary.title,
+          fileType: doc.fileType
+        }
+      })
+      .filter((d): d is SelectedDocumentInfo => d !== null)
+  }, [selectedDocumentIds, documents])
+
+  // Handle removing a selected document
+  const handleRemoveDocument = useCallback((documentId: string) => {
+    setSelectedDocumentIds(prev => prev.filter(id => id !== documentId))
+  }, [])
 
   // Handle starting a new conversation
   const handleNewConversation = useCallback(() => {
@@ -177,8 +354,9 @@ export function ChatClient({
 
   return (
     <div className={`flex flex-col h-full ${className || ''}`}>
-      {/* Chat header with History and New Conversation buttons */}
-      <div className="flex items-center justify-between px-4 py-2 border-b">
+      {/* Chat header with History (left), New Conversation (center), Documents (right) */}
+      <div className="flex items-center px-4 py-2 border-b">
+        {/* Left: History button */}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -196,19 +374,69 @@ export function ChatClient({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        {showNewConversationButton && (
-          <NewConversationButton
-            onClick={handleNewConversation}
-            disabled={isLoading || isLoadingHistory}
-          />
-        )}
+
+        {/* Center: New Conversation button (or spacer) */}
+        <div className="flex-1 flex justify-center">
+          {showNewConversationButton && (
+            <NewConversationButton
+              onClick={handleNewConversation}
+              disabled={isLoading || isLoadingHistory}
+            />
+          )}
+        </div>
+
+        {/* Right: Documents panel button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsDocsPanelOpen(true)}
+                aria-label="View documents"
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>My Documents</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
       <ChatContainer className="flex-1">
-        {isLoadingHistory && conversationId ? (
+        {documentLoading ? (
+          // Show loading state while fetching document context
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            Loading document...
+          </div>
+        ) : isLoadingHistory && conversationId ? (
           // Show loading state while fetching conversation history
           <div className="flex items-center justify-center h-full text-muted-foreground">
             Loading conversation...
           </div>
+        ) : messages.length === 0 && (contextDocument || uploadedDocument) ? (
+          // Show document announcement for "Chat about this" flow - AC #15
+          // Or for newly uploaded document - AC #9
+          (() => {
+            const doc = contextDocument || uploadedDocument!
+            const isStillProcessing = doc.processingStatus === 'processing'
+            const summary = generateSmartSummary(doc)
+            const questions = isStillProcessing
+              ? ['What is this document about?', 'What should I expect from this data?']
+              : generateSuggestedQuestions(summary)
+
+            return (
+              <DocumentAnnouncement
+                summary={summary}
+                suggestedQuestions={questions}
+                onQuestionClick={handleSuggestionClick}
+                isProcessing={isStillProcessing}
+                filename={doc.filename}
+                isPDF={doc.fileType === 'pdf'}
+              />
+            )
+          })()
         ) : messages.length === 0 ? (
           <EmptyState onQuestionClick={handleExampleQuestionClick} />
         ) : (
@@ -217,9 +445,16 @@ export function ChatClient({
               const isLastMessage = index === messages.length - 1
               const isAssistant = message.role === 'assistant'
               const isComplete = !isLoading || !isLastMessage
+              const isUser = !isAssistant
 
               // Only show suggestions on the last assistant message when complete
               const showSuggestions = isLastMessage && isAssistant && isComplete
+
+              // Show document refs for user messages (only when documents are selected)
+              // Maps SelectedDocumentInfo to MessageDocumentRef format
+              const documentRefs: MessageDocumentRef[] | undefined = isUser && selectedDocumentsInfo.length > 0
+                ? selectedDocumentsInfo.map(d => ({ id: d.id, title: d.title, fileType: d.fileType }))
+                : undefined
 
               return (
                 <ChatMessage
@@ -229,6 +464,7 @@ export function ChatClient({
                   suggestions={showSuggestions ? lastMessageSuggestions : undefined}
                   onSuggestionClick={showSuggestions ? handleSuggestionClick : undefined}
                   isComplete={isComplete}
+                  documentRefs={documentRefs}
                 />
               )
             })}
@@ -241,6 +477,10 @@ export function ChatClient({
         onChange={handleInputChange}
         onSubmit={handleSubmit}
         disabled={isLoading || isLoadingHistory}
+        onFileSelect={handleFileSelect}
+        processingFile={processingFile}
+        selectedDocuments={selectedDocumentsInfo}
+        onRemoveDocument={handleRemoveDocument}
       />
 
       {/* Conversation History Panel */}
@@ -249,6 +489,15 @@ export function ChatClient({
         onOpenChange={setIsHistoryOpen}
         selectedConversationId={conversationId}
         onSelectConversation={handleSelectConversation}
+      />
+
+      {/* Documents Side Panel - AC #12 */}
+      <DocumentsSidePanel
+        open={isDocsPanelOpen}
+        onClose={() => setIsDocsPanelOpen(false)}
+        documents={documents}
+        selectedDocumentIds={selectedDocumentIds}
+        onSelectionChange={setSelectedDocumentIds}
       />
     </div>
   )

@@ -1,6 +1,8 @@
 /**
  * Tests for DocumentCard component.
  * Story: 3.3 CSV File Upload
+ * Story: 5.0 - Chat-First Document Upload with Unified Experience
+ * AC #14, #15, #16: Smart summary, "Chat about this" primary action, progressive disclosure
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -26,7 +28,14 @@ describe('DocumentCard', () => {
     csvType: 'employees',
     rowCount: 25,
     createdAt: '2024-01-15T10:30:00Z',
-    updatedAt: '2024-01-15T10:30:00Z'
+    updatedAt: '2024-01-15T10:30:00Z',
+    extractedData: {
+      documentType: 'employees',
+      employees: [
+        { name: 'John', salary: 50000 },
+        { name: 'Jane', salary: 60000 }
+      ]
+    }
   }
 
   beforeEach(() => {
@@ -34,28 +43,46 @@ describe('DocumentCard', () => {
     mockOnDelete.mockResolvedValue(undefined)
   })
 
-  it('renders document filename', () => {
+  it('renders smart summary title for completed documents', () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
+
+    // Smart summary generates title from filename
+    expect(screen.getByText('Test File')).toBeInTheDocument()
+  })
+
+  it('renders filename for non-completed documents', () => {
+    const pendingDoc = { ...mockDocument, processingStatus: 'pending' as const }
+    render(<DocumentCard document={pendingDoc} onDelete={mockOnDelete} />)
 
     expect(screen.getByText('test-file.csv')).toBeInTheDocument()
   })
 
-  it('renders file size formatted correctly', () => {
+  it('renders file size in expanded view', async () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
 
-    expect(screen.getByText(/50 KB/)).toBeInTheDocument()
+    // Expand to see file size
+    await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
+    // File size appears in expanded metadata section
+    const fileSizeElements = screen.getAllByText(/50 KB/)
+    expect(fileSizeElements.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('renders upload date', () => {
+  it('renders upload date in expanded view', async () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
 
-    expect(screen.getByText(/Jan 15, 2024/)).toBeInTheDocument()
+    // Expand to see date
+    await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
+    // Date appears in expanded metadata section
+    const dateElements = screen.getAllByText(/Jan 15, 2024/)
+    expect(dateElements.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('shows completed status badge', () => {
+  it('does not show status badge for completed documents', () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
 
-    expect(screen.getByText('Completed')).toBeInTheDocument()
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument()
   })
 
   it('shows pending status badge', () => {
@@ -84,16 +111,101 @@ describe('DocumentCard', () => {
     expect(screen.getByText('Failed to parse CSV')).toBeInTheDocument()
   })
 
-  it('shows CSV type label when completed', () => {
+  it('shows CSV type label when expanded', async () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
+
+    // Expand to see document type label
+    await userEvent.click(screen.getByRole('button', { name: /More/i }))
 
     expect(screen.getByText('Employee Roster')).toBeInTheDocument()
   })
 
-  it('shows row count when completed', () => {
+  it('shows row count when expanded', async () => {
     render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
 
+    // Expand to see row count
+    await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
     expect(screen.getByText('25 rows')).toBeInTheDocument()
+  })
+
+
+  describe('Progressive disclosure - AC #16, #19, #20, #21', () => {
+    it('shows preview metrics in collapsed state', () => {
+      const plDoc: Document = {
+        id: 'doc-pl',
+        userId: 'user-1',
+        filename: 'financial-report.pdf',
+        fileType: 'pdf',
+        fileSize: 1024 * 100,
+        mimeType: 'application/pdf',
+        storagePath: 'user-1/financial.pdf',
+        processingStatus: 'completed',
+        createdAt: '2024-01-15T10:30:00Z',
+        updatedAt: '2024-01-15T10:30:00Z',
+        // Use correct nested schema format
+        extractedData: {
+          documentType: 'pl',
+          revenue: { total: 100000, lineItems: [] },
+          expenses: { total: 80000, categories: [] }
+        }
+      }
+      render(<DocumentCard document={plDoc} onDelete={mockOnDelete} />)
+
+      // Should show preview metrics as "Label: value • Label: value" in collapsed state
+      // Smart summary generates metrics like "Revenue: $100,000"
+      expect(screen.getByText(/\$100,000/)).toBeInTheDocument()
+    })
+
+    it('shows More button to expand', () => {
+      render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
+
+      expect(screen.getByRole('button', { name: /More/i })).toBeInTheDocument()
+    })
+
+    it('expands to show full metrics when More is clicked', async () => {
+      const plDoc: Document = {
+        id: 'doc-pl',
+        userId: 'user-1',
+        filename: 'financial-report.pdf',
+        fileType: 'pdf',
+        fileSize: 1024 * 100,
+        mimeType: 'application/pdf',
+        storagePath: 'user-1/financial.pdf',
+        processingStatus: 'completed',
+        createdAt: '2024-01-15T10:30:00Z',
+        updatedAt: '2024-01-15T10:30:00Z',
+        // Use correct nested schema format
+        extractedData: {
+          documentType: 'pl',
+          revenue: { total: 100000, lineItems: [] },
+          expenses: { total: 80000, categories: [] }
+        }
+      }
+      render(<DocumentCard document={plDoc} onDelete={mockOnDelete} />)
+
+      // Click More
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
+      // Should show all metrics (Net Income is calculated: revenue - expenses)
+      expect(screen.getByText('Net Income')).toBeInTheDocument()
+    })
+
+    it('collapses back when Less is clicked', async () => {
+      render(<DocumentCard document={mockDocument} onDelete={mockOnDelete} />)
+
+      // Expand
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
+      // Should show Less button
+      expect(screen.getByRole('button', { name: /Less/i })).toBeInTheDocument()
+
+      // Collapse
+      await userEvent.click(screen.getByRole('button', { name: /Less/i }))
+
+      // Should show More button again
+      expect(screen.getByRole('button', { name: /More/i })).toBeInTheDocument()
+    })
   })
 
   it('shows View Data button when completed and onView is provided', () => {
@@ -204,19 +316,23 @@ describe('DocumentCard', () => {
       updatedAt: '2024-01-20T14:00:00Z'
     }
 
-    it('renders PDF filename', () => {
+    it('renders smart summary title for PDF', () => {
       render(<DocumentCard document={mockPDFDocument} onDelete={mockOnDelete} />)
 
-      expect(screen.getByText('Q4-P&L-Report.pdf')).toBeInTheDocument()
+      // Smart summary generates title from filename (Q4-P&L-Report.pdf -> Q4 P&l Report)
+      expect(screen.getByText('Q4 P&l Report')).toBeInTheDocument()
     })
 
-    it('shows P&L schema label for P&L documents', () => {
+    it('shows P&L schema label when expanded', async () => {
       render(<DocumentCard document={mockPDFDocument} onDelete={mockOnDelete} />)
+
+      // Expand to see schema label
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
 
       expect(screen.getByText('P&L Statement')).toBeInTheDocument()
     })
 
-    it('shows Payroll Report label for payroll documents', () => {
+    it('shows Payroll Report label when expanded', async () => {
       const payrollDoc = {
         ...mockPDFDocument,
         filename: 'payroll-jan.pdf',
@@ -227,13 +343,16 @@ describe('DocumentCard', () => {
       }
       render(<DocumentCard document={payrollDoc} onDelete={mockOnDelete} />)
 
+      // Expand to see schema label
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
       expect(screen.getByText('Payroll Report')).toBeInTheDocument()
     })
 
-    it('shows Document label for unknown PDF types', () => {
+    it('shows Document label when expanded for unknown PDF types', async () => {
       const unknownDoc = {
         ...mockPDFDocument,
-        filename: 'document.pdf',
+        filename: 'random-file.pdf',
         extractedData: {
           documentType: 'unknown',
           rawContent: 'Some text'
@@ -241,15 +360,23 @@ describe('DocumentCard', () => {
       }
       render(<DocumentCard document={unknownDoc} onDelete={mockOnDelete} />)
 
-      expect(screen.getByText('Document')).toBeInTheDocument()
+      // Expand to see schema label
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
+
+      // Should show "Document" as schema label (not the smart summary title)
+      const docLabels = screen.getAllByText('Document')
+      expect(docLabels.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('does not show row count for PDF documents', () => {
+    it('does not show row count for PDF documents even when expanded', async () => {
       const pdfWithRowCount = {
         ...mockPDFDocument,
         rowCount: 10
       }
       render(<DocumentCard document={pdfWithRowCount} onDelete={mockOnDelete} />)
+
+      // Expand the card
+      await userEvent.click(screen.getByRole('button', { name: /More/i }))
 
       expect(screen.queryByText('10 rows')).not.toBeInTheDocument()
     })

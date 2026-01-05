@@ -17,10 +17,10 @@ let mockStatus: 'ready' | 'submitted' | 'streaming' = 'ready'
 let mockConversation: { messages: Array<{ id: string; conversation_id: string; role: string; content: string; created_at: string }> } | null = null
 let mockIsLoadingHistory = false
 
-// Mock sonner toast
+// Mock sonner toast (accepts title and optional options with description)
 vi.mock('sonner', () => ({
   toast: {
-    error: (msg: string) => mockToastError(msg)
+    error: (msg: string, options?: { description?: string }) => mockToastError(msg, options)
   }
 }))
 
@@ -386,7 +386,11 @@ describe('ChatClient Integration', () => {
       expect(mockOnError).toBeDefined()
       mockOnError?.(new Error('Network error'))
 
-      expect(mockToastError).toHaveBeenCalledWith('Failed to send message. Please try again.')
+      // Uses friendly error messages from getFriendlyError utility
+      expect(mockToastError).toHaveBeenCalledWith(
+        "We couldn't connect to our servers.",
+        { description: 'Check your internet connection and try again.' }
+      )
     })
 
     it('shows rate limit toast on 429 error', () => {
@@ -394,7 +398,11 @@ describe('ChatClient Integration', () => {
 
       mockOnError?.(new Error('Rate limit exceeded - 429'))
 
-      expect(mockToastError).toHaveBeenCalledWith('Too many requests. Please wait a moment and try again.')
+      // Uses friendly error messages from getFriendlyError utility
+      expect(mockToastError).toHaveBeenCalledWith(
+        "We're getting a lot of requests right now.",
+        { description: 'Please wait a moment and try again.' }
+      )
     })
 
     it('shows session expired toast on 401 error', () => {
@@ -402,7 +410,11 @@ describe('ChatClient Integration', () => {
 
       mockOnError?.(new Error('Unauthorized - 401'))
 
-      expect(mockToastError).toHaveBeenCalledWith('Session expired. Please refresh the page.')
+      // Uses friendly error messages from getFriendlyError utility
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Your session has expired.',
+        { description: 'Please refresh the page to sign in again.' }
+      )
     })
 
     it('logs error to console', () => {

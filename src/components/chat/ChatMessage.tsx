@@ -1,10 +1,19 @@
 'use client'
 
+import { FileText, FileSpreadsheet } from 'lucide-react'
+
 import { SuggestedQuestions } from '@/components/chat/SuggestedQuestions'
 import { getCleanResponse } from '@/lib/ai/parse-suggestions'
 import { cn } from '@/lib/utils'
 
 import type { UIMessage } from 'ai'
+
+/** Document reference to show with user messages */
+export interface MessageDocumentRef {
+  id: string
+  title: string
+  fileType: 'csv' | 'pdf'
+}
 
 function getMessageContent(message: UIMessage, stripSuggestions = false): string {
   const content = message.parts
@@ -108,6 +117,8 @@ interface ChatMessageProps {
   suggestions?: string[]
   onSuggestionClick?: (question: string) => void
   isComplete?: boolean
+  /** Document references for user messages (shows what documents were selected) */
+  documentRefs?: MessageDocumentRef[]
 }
 
 function getMessageTimestamp(timestamp?: Date): string {
@@ -123,7 +134,8 @@ export function ChatMessage({
   timestamp,
   suggestions,
   onSuggestionClick,
-  isComplete
+  isComplete,
+  documentRefs
 }: ChatMessageProps) {
   const isUser = variant === 'user'
 
@@ -147,6 +159,24 @@ export function ChatMessage({
         className
       )}
     >
+      {/* Document references for user messages */}
+      {isUser && documentRefs && documentRefs.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1 max-w-[80%] justify-end">
+          {documentRefs.map((doc) => (
+            <div
+              key={doc.id}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/50 text-accent-foreground text-xs"
+            >
+              {doc.fileType === 'pdf' ? (
+                <FileText className="h-3 w-3" />
+              ) : (
+                <FileSpreadsheet className="h-3 w-3" />
+              )}
+              <span className="max-w-[100px] truncate">{doc.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div
         className={cn(
           'max-w-[80%] rounded-lg px-md py-sm',

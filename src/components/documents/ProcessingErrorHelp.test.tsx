@@ -79,6 +79,7 @@ describe('ProcessingErrorHelp', () => {
 
       // Title is "Could not extract data" - check by role
       expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Could not extract data')
+      expect(screen.getByRole('button', { name: 'Chat to resolve' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Enter data manually' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Contact support' })).toBeInTheDocument()
     })
@@ -87,8 +88,8 @@ describe('ProcessingErrorHelp', () => {
       render(<ProcessingErrorHelp errorMessage="Something unexpected happened" />)
 
       expect(screen.getByText('Processing failed')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Chat to resolve' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Contact support' })).toBeInTheDocument()
     })
   })
 
@@ -119,7 +120,8 @@ describe('ProcessingErrorHelp', () => {
       const user = userEvent.setup()
       const windowOpenSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
-      render(<ProcessingErrorHelp errorMessage="Unknown error" />)
+      // Use extraction error which has Contact support action
+      render(<ProcessingErrorHelp errorMessage="Could not extract data" />)
 
       await user.click(screen.getByRole('button', { name: 'Contact support' }))
 
@@ -129,6 +131,17 @@ describe('ProcessingErrorHelp', () => {
       )
 
       windowOpenSpy.mockRestore()
+    })
+
+    it('calls onChatToResolve when chat button is clicked', async () => {
+      const user = userEvent.setup()
+      const onChatToResolve = vi.fn()
+
+      render(<ProcessingErrorHelp errorMessage="Unknown error" onChatToResolve={onChatToResolve} />)
+
+      await user.click(screen.getByRole('button', { name: 'Chat to resolve' }))
+
+      expect(onChatToResolve).toHaveBeenCalledTimes(1)
     })
   })
 

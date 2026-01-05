@@ -13,6 +13,14 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    // Resource limits to prevent system lag/crashes
+    pool: "threads",
+    poolOptions: {
+      threads: {
+        maxThreads: 4,
+        minThreads: 1,
+      },
+    },
     coverage: {
       reporter: ["text", "json", "html"],
       exclude: ["node_modules/", "src/**/*.test.{ts,tsx}"],

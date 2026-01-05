@@ -6,7 +6,16 @@ import { createClient } from '@/lib/supabase/server'
 
 import { ChatClient } from './ChatClient'
 
-async function ChatContent() {
+interface ChatContentProps {
+  searchParams: Promise<{ documentId?: string; error?: string }>
+}
+
+async function ChatContent({ searchParams }: ChatContentProps) {
+  // Await searchParams inside Suspense boundary to avoid blocking the page
+  const params = await searchParams
+  const documentId = params.documentId
+  const isErrorResolution = params.error === 'true'
+
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -28,18 +37,31 @@ async function ChatContent() {
   }
 
   // Load most recent conversation for this user (AC #2)
-  const { data: recentConversation } = await getMostRecentConversation(user.id)
+  // Skip loading conversation if documentId provided - we want a fresh chat about the document
+  const { data: recentConversation } = documentId
+    ? { data: null }
+    : await getMostRecentConversation(user.id)
 
   // Profile data (agency_name, employee_count, annual_revenue_range) is fetched
   // server-side in /api/chat for security - prevents client manipulation
-  return <ChatClient initialConversationId={recentConversation?.id} />
+  return (
+    <ChatClient
+      initialConversationId={recentConversation?.id}
+      initialDocumentId={documentId}
+      isErrorResolution={isErrorResolution}
+    />
+  )
 }
 
-export default function ChatPage() {
+interface PageProps {
+  searchParams: Promise<{ documentId?: string; error?: string }>
+}
+
+export default async function ChatPage({ searchParams }: PageProps) {
   return (
     <div className="h-full">
       <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground">Loading...</div>}>
-        <ChatContent />
+        <ChatContent searchParams={searchParams} />
       </Suspense>
     </div>
   )

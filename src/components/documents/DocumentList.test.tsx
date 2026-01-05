@@ -93,8 +93,9 @@ describe('DocumentList', () => {
       />
     )
 
-    expect(screen.getByText('employees.csv')).toBeInTheDocument()
-    expect(screen.getByText('payroll.csv')).toBeInTheDocument()
+    // DocumentCard shows smart summary title for completed docs, filename for pending
+    expect(screen.getByText('Employees')).toBeInTheDocument() // Smart summary title for completed
+    expect(screen.getByText('payroll.csv')).toBeInTheDocument() // Filename for pending
   })
 
   it('renders correct number of document cards', () => {
@@ -157,7 +158,9 @@ describe('DocumentList', () => {
       />
     )
 
-    expect(screen.getByText('Completed')).toBeInTheDocument()
+    // Completed status badge is not shown for completed documents (clean UI)
+    // Only pending documents show their status badge
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument()
     expect(screen.getByText('Pending')).toBeInTheDocument()
   })
 })
